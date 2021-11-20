@@ -3,6 +3,7 @@ pragma solidity 0.7.0;
 
 import "./interfaces/IBank.sol";
 import "./interfaces/IPriceOracle.sol";
+import "./libraries/Math.sol";
 
 
 contract Bank is IBank {
@@ -16,6 +17,10 @@ contract Bank is IBank {
     mapping(address => Account) private ethBorAccountOf;
     mapping(address => Account) private hakDepAccountOf;
     mapping(address => Account) private hakBorAccountOf;
+    mapping(address => bool) private ethDepMutexOf;
+    mapping(address => bool) private ethBorMutexOf;
+    mapping(address => bool) private hakDepMutexOf;
+    mapping(address => bool) private hakBorMutexOf;
 
     
     constructor(address _priceOracle, address _hakToken) {}
@@ -33,14 +38,28 @@ contract Bank is IBank {
     function deposit(address token, uint256 amount) payable external override returns (bool){
         require(msg.value == amount);
         if (token == this.ethToken){
-           ethDepAccountOf[msg.sender].deposit += amount;
-           emit Deposit(msg.sender, token, amount);
-           return true;
+            require(!ethDepMutexOf[msg.sender]);
+            ethDepMutexOf[msg.sender] = true;
+            
+            require(updateDepInterest(ethDepAccountOf[msg.sender])); 
+            
+            emit Deposit(msg.sender, token, amount);
+            ethDepAccountOf[msg.sender].deposit += amount;
+            
+            ethDepMutexOf[msg.sender] = false;
+            return true;
         }   
         else {
             //TODO: find a HAK token identifier
-            hakDepAccountOf[msg.sender].deposit += amount;
+            require(!hakDepMutexOf[msg.sender]);
+            hakDepMutexOf[msg.sender] = true;
+            
+            require(updateDepInterest(hakDepAccountOf[msg.sender]));
+            
             emit Deposit(msg.sender, token, amount);
+            hakDepAccountOf[msg.sender].deposit += amount;
+            
+            hakDepMutexOf[msg.sender] = false;
             return true;
         }
     }   
@@ -61,17 +80,55 @@ contract Bank is IBank {
     function withdraw(address token, uint256 amount) external override returns (uint256){
         require(msg.value == amount);
         if (token == this.ethToken){
-            require(amount <= ethDepAccountOf[msg.sender].deposit);
+            
+            require(!ethDepMutexOf[msg.sender]);
+            ethDepMutexOf[msg.sender] = true;
+            
+            require(updateDepInterest(ethDepAccountOf[msg.sender]));
+            
+            require(amount <= ethDepAccountOf[msg.sender].deposit + ethDepAccountOf[msg.sender].interest);
+            
             emit Withdraw(msg.sender, token, amount);
-            ethDepAccountOf[msg.sender].deposit -= amount;
-            return ;
+            
+            if (amount <= ethDepAccountOf[msg.sender].interest)
+            {
+                ethDepAccountOf[msg.sender].interest -= amount;
+            }
+            else
+            {
+                uint256 currInterest = ethDepAccountOf[msg.sender].interest;
+                ethDepAccountOf[msg.sender].interest = 0;
+                ethDepAccountOf[msg.sender].deposit -= (amount - currInterest);
+            }
+            
+            ethDepMutexOf[msg.sender] = false;
+            return amount;
         }   
         else {
+            
             //TODO: find a HAK token identifier
-            require(amount <= hakDepAccountOf[msg.sender].deposit);
+            require(!hakDepMutexOf[msg.sender]);
+            hakDepMutexOf[msg.sender] = true;
+            
+            require(updatehakInterest(hakDepAccountOf[msg.sender]));
+            
+            require(amount <= hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest);
+            
             emit Withdraw(msg.sender, token, amount);
-            hakDepAccountOf[msg.sender].deposit -= amount;
-            return ;
+            
+            if (amount <= hakDepAccountOf[msg.sender].interest)
+            {
+                hakDepAccountOf[msg.sender].interest -= amount;
+            }
+            else
+            {
+                uint256 currInterest = hakDepAccountOf[msg.sender].interest;
+                hakDepAccountOf[msg.sender].interest = 0;
+                hakDepAccountOf[msg.sender].deposit -= (amount - currInterest);
+            }
+            
+            hakDepMutexOf[msg.sender] = false;
+            return amount;
         }
     }
     
@@ -174,5 +231,26 @@ contract Bank is IBank {
             return hakAccountOf[msg.sender].balance + hakAccountOf[msg.sender].interest;
         }
 
+    }
+    
+    /**
+     * new function to update interest for deposit
+     * 
+     * 
+     */
+     funktion updateDepInterest(Account account_) private returns (bool){
+        uint256 currPeriod = block.number - account_.lastInterestBlock; 
+        require(currPeriod > 0);
+        account_.lastInterestBlock = block.number;
+        account_.interest += (3 * account_.deposit) / 100 ;
+        return true;
+     }
+     
+    funktion updateBorInterest(Account account_) private returns (bool){
+        uint256 currPeriod = block.number - account_.lastInterestBlock;
+        require(currPeriod > 0);
+        account_.lastInterestBlock = block.number;
+        account_.interest += (5 * account_.deposit) / 100;
+        return true;
     }
 }
