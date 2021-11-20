@@ -312,7 +312,9 @@ contract Bank is IBank {
      */
     function liquidate(address token, address account) payable external override returns (bool) {
 
-        require(account != msg.sender, '19) liquidates own account');
+        if (account == msg.sender) {
+            revert('cannot liquidate own position');
+        }
         require(!ethBorMutexOf[account]);
         ethBorMutexOf[account] = true;
 
