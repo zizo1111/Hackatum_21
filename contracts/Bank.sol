@@ -14,14 +14,20 @@ contract Bank is IBank {
     mapping(address => Account) private ethDepAccountOf;
     mapping(address => Account) private ethBorAccountOf;
     mapping(address => Account) private hakDepAccountOf;
-    mapping(address => Account) private hakBorAccountOf;
+    //mapping(address => Account) private hakBorAccountOf;
     mapping(address => bool) private ethDepMutexOf;
     mapping(address => bool) private ethBorMutexOf;
     mapping(address => bool) private hakDepMutexOf;
-    mapping(address => bool) private hakBorMutexOf;
+    //mapping(address => bool) private hakBorMutexOf;
 
-
-    constructor(address _priceOracle, address _hakToken) {}
+    address priceOracle;
+    address hakToken;
+    
+    constructor(address _priceOracle, address _hakToken) {
+        this.priceOracle = _priceOracle();
+        this.hakToken = _hakToken;
+        
+    }
 
 
     /**
@@ -112,9 +118,14 @@ contract Bank is IBank {
             
             ethDepMutexOf[msg.sender] = false;
             return amount;
+<<<<<<< HEAD
         }
 
         else {
+=======
+        }   
+        else if(token == this.hakToken){
+>>>>>>> d7c5c18135066b50a2213214e1bf5a871f6ae5b6
             
             //TODO: find a HAK token identifier
             require(!hakDepMutexOf[msg.sender]);
@@ -169,23 +180,26 @@ contract Bank is IBank {
         ethBorMutexOf[msg.sender] = true;
         hakDepMutexOf[msg.sender] = true;
         
-        uint256 HAKinETH = getVirtualPrice(0xBefeeD4CB8c6DD190793b1c97B72B60272f3EA6C); //address of HAK
+        uint256 HAKinETH = this.priceOracle.getVirtualPrice(this.hakToken); //address of HAK
         
         uint256 hakDepinETH = hakDepAccountOf[msg.sender].deposit * HAKinETH ;
         uint256 hakInterestinETH = hakDepAccountOf[msg.sender].interest * HAKinETH; 
         
         uint256 collateral_ratio = (hakDepinETH + hakInterestinETH) * 10000 / (ethBorAccountOf[msg.sender].deposit + amount + ethBorAccountOf[msg.sender].interest);
         if (collateral_ratio >= 15000){
-            if (amout > 0){
+            if (amount > 0){
+                
+                event Borrow(msg.sender, address indexed token, uint256 amount, uint256 newCollateralRatio );
                 ethBorAccountOf[msg.sender].deposit += amount;
             } else if (amount == 0) {
-                uint256 amount_max =  ((hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest) * 10000 / 15000) - ethBorAccountOf[msg.sender].deposit - ethBorAccountOf[msg.sender].interest;
+                uint256 amount_max =  (((hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest) * 10000 / 15000) - ethBorAccountOf[msg.sender].deposit - ethBorAccountOf[msg.sender].interest); 
                 ethBorAccountOf[msg.sender].deposit += amount_max;
             }
         }
         
         ethBorMutexOf[msg.sender] = false;
         hakDepMutexOf[msg.sender] = false;
+        
         
         return collateral_ratio;
     }
@@ -300,29 +314,24 @@ contract Bank is IBank {
      *           If the account has deposited token, but has not borrowed anything then 
      *           return MAX_INT.
      */
-    function getCollateralRatio(address token, address account) view external override returns (uint256) {
-        if (token == ethToken) {
-            if (ethDepAccountOf[msg.sender].deposit > 0) {
-                if (ethBorAccountOf[msg.sender].deposit > 0) {
-                    return (ethDepAccountOf[msg.sender].deposit / ethBorAccountOf[msg.sender].deposit)*100;
-                } else {
+    function getCollateralRatio(address token, address account) view external override returns (uint256){
+        if (token == this.hakToken){
+            if (hakDepAccountOf[account].deposit > 0){
+                if (ethBorAccountOf[account].deposit > 0) {
+                    uint256 HAKinETH = this.priceOracle.getVirtualPrice(this.hakToken); //address of HAK
+        
+                    uint256 hakDepinETH = hakDepAccountOf[account].deposit * HAKinETH ;
+                    uint256 hakInterestinETH = hakDepAccountOf[account].interest * HAKinETH; 
+                    
+                    return (hakDepinETH + hakInterestinETH) * 10000 / (ethBorAccountOf[account].deposit + ethBorAccountOf[account].interest);
+                }
+                else
+                {
                     return type(uint256).max;
                 }
             }
-            else{
-                return 0;
-            }
-        }
-        //TODO: HAK identifier
-        else {
-            if (hakDepAccountOf[msg.sender].deposit > 0) {
-                if (hakBorAccountOf[msg.sender].deposit > 0) {
-                    return (hakDepAccountOf[msg.sender].deposit / hakBorAccountOf[msg.sender].deposit)*100;
-                } else {
-                    return type(uint256).max;
-                }
-            }
-            else {
+            else
+            {
                 return 0;
             }
         }
@@ -336,27 +345,17 @@ contract Bank is IBank {
      * @return - the value of the caller's balance with interest, excluding debts.
      */
     function getBalance(address token) view external override returns (uint256){
-        if (token == ethToken) {
-            // require(!ethDepMutexOf[msg.sender]);
-            // ethDepMutexOf[msg.sender] = true;
-            
-            // require(updateDepInterest(ethDepAccountOf[msg.sender]));
-            
-            // ethDepMutexOf[msg.sender] = false;
-            
-            return ethDepAccountOf[msg.sender].deposit + ethDepAccountOf[msg.sender].interest;
+        if (token == ethToken){
+  
+            return ethDepAccountOf[msg.sender].deposit + checkDepInterest(ethDepAccountOf[msg.sender]);
         }   
         else {
-            //TODO: find a HAK token identifier
-            // require(!hakDepMutexOf[msg.sender]);
-            // hakDepMutexOf[msg.sender] = true;
+            if (token == ethToken){
+                return hakDepAccountOf[msg.sender].deposit + checkDepInterest(hakDepAccountOf[msg.sender]);
+            }
             
-            // require(updateDepInterest(hakDepAccountOf[msg.sender]));
-            
-            // hakDepMutexOf[msg.sender] = false;
-            
-            return hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest;
         }
+        revert;
 
     }
 
