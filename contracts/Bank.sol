@@ -4,12 +4,14 @@ pragma solidity 0.7.0;
 import "./interfaces/IBank.sol";
 import "./interfaces/IPriceOracle.sol";
 import "./libraries/Math.sol";
+import "./test/HAKToken.sol";
+
 
 
 contract Bank is IBank {
 
     using DSMath for uint256;
-    address constant ethToken = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    address private constant ethToken = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     mapping(address => Account) private ethDepAccountOf;
     mapping(address => Account) private ethBorAccountOf;
@@ -20,12 +22,14 @@ contract Bank is IBank {
     mapping(address => bool) private hakDepMutexOf;
     // mapping(address => bool) private hakBorMutexOf;
 
-    IPriceOracle priceOracle;
-    address hakToken;
+    IPriceOracle private priceOracle;
+    IERC20 private hakToken;
+    address private hakTokenAdd;
     
     constructor(address _priceOracle, address _hakToken) {
         priceOracle = IPriceOracle(_priceOracle);
-        hakToken = _hakToken;
+        hakTokenAdd = _hakToken;
+        hakToken = IERC20(_hakToken);
         
     }
 
@@ -119,7 +123,7 @@ contract Bank is IBank {
             ethDepMutexOf[msg.sender] = false;
             return amount;
         }   
-        else if(token == hakToken){
+        else if(token == hakTokenAdd){
             
             //TODO: find a HAK token identifier
             require(!hakDepMutexOf[msg.sender]);
@@ -174,7 +178,7 @@ contract Bank is IBank {
         ethBorMutexOf[msg.sender] = true;
         hakDepMutexOf[msg.sender] = true;
         
-        uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
+        uint256 HAKinETH = priceOracle.getVirtualPrice(hakTokenAdd); //address of HAK
         
         uint256 hakDepinETH = hakDepAccountOf[msg.sender].deposit * HAKinETH ;
         uint256 hakInterestinETH = hakDepAccountOf[msg.sender].interest * HAKinETH; 
@@ -278,7 +282,7 @@ contract Bank is IBank {
         require(!ethBorMutexOf[account]);
         ethBorMutexOf[account] = true;
 
-        uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
+        uint256 HAKinETH = priceOracle.getVirtualPrice(hakTokenAdd); //address of HAK
         
         uint256 hakDepinETH = hakDepAccountOf[account].deposit * HAKinETH ;
         uint256 hakInterestinETH = hakDepAccountOf[account].interest * HAKinETH;
@@ -316,10 +320,10 @@ contract Bank is IBank {
      *           return MAX_INT.
      */
     function getCollateralRatio(address token, address account) view external override returns (uint256){
-        if (token == hakToken){
+        if (token == hakTokenAdd){
             if (hakDepAccountOf[account].deposit > 0){
                 if (ethBorAccountOf[account].deposit > 0) {
-                    uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
+                    uint256 HAKinETH = priceOracle.getVirtualPrice(hakTokenAdd); //address of HAK
         
                     uint256 hakDepinETH = hakDepAccountOf[account].deposit * HAKinETH ;
                     uint256 hakInterestinETH = hakDepAccountOf[account].interest * HAKinETH; 

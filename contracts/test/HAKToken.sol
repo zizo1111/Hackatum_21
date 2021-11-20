@@ -1,7 +1,7 @@
 //SPDX-License-Identifier: Unlicense
 pragma solidity 0.7.0;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "@openzeppelin/contracts@3.4.2-solc-0.7/token/ERC20/ERC20.sol";
 
 contract HAKTest is ERC20 {
 
