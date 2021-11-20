@@ -247,7 +247,22 @@ contract Bank is IBank {
      * @return - true if the liquidation was successful, otherwise revert.
      */
     function liquidate(address token, address account) payable external override returns (bool){
-    
+
+        uint256 collateral_ratio = this.getCollateralRatio(token, account);
+
+        if (collateral_ratio < 150) {
+            if (token == this.ethToken){
+            }
+
+            else{
+            }
+            return true;
+        }
+
+        else {
+            return false;
+        }
+
     }
     
     /**
