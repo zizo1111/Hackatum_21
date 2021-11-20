@@ -14,18 +14,18 @@ contract Bank is IBank {
     mapping(address => Account) private ethDepAccountOf;
     mapping(address => Account) private ethBorAccountOf;
     mapping(address => Account) private hakDepAccountOf;
-    //mapping(address => Account) private hakBorAccountOf;
+    // mapping(address => Account) private hakBorAccountOf;
     mapping(address => bool) private ethDepMutexOf;
     mapping(address => bool) private ethBorMutexOf;
     mapping(address => bool) private hakDepMutexOf;
-    //mapping(address => bool) private hakBorMutexOf;
+    // mapping(address => bool) private hakBorMutexOf;
 
     address priceOracle;
     address hakToken;
     
     constructor(address _priceOracle, address _hakToken) {
-        this.priceOracle = _priceOracle();
-        this.hakToken = _hakToken;
+        priceOracle = PriceOracle();
+        hakToken = _hakToken;
         
     }
 
@@ -174,7 +174,7 @@ contract Bank is IBank {
         ethBorMutexOf[msg.sender] = true;
         hakDepMutexOf[msg.sender] = true;
         
-        uint256 HAKinETH = this.priceOracle.getVirtualPrice(this.hakToken); //address of HAK
+        uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
         
         uint256 hakDepinETH = hakDepAccountOf[msg.sender].deposit * HAKinETH ;
         uint256 hakInterestinETH = hakDepAccountOf[msg.sender].interest * HAKinETH; 
@@ -182,8 +182,8 @@ contract Bank is IBank {
         uint256 collateral_ratio = (hakDepinETH + hakInterestinETH) * 10000 / (ethBorAccountOf[msg.sender].deposit + amount + ethBorAccountOf[msg.sender].interest);
         if (collateral_ratio >= 15000){
             if (amount > 0){
-                
-                emit Borrow(msg.sender, address indexed token, uint256 amount, uint256 newCollateralRatio );
+                uint256 newCollateralRatio = collateral_ratio;
+                emit Borrow(msg.sender, token, amount, newCollateralRatio);
                 ethBorAccountOf[msg.sender].deposit += amount;
             } else if (amount == 0) {
                 uint256 amount_max =  (((hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest) * 10000 / 15000) - ethBorAccountOf[msg.sender].deposit - ethBorAccountOf[msg.sender].interest); 
@@ -215,6 +215,7 @@ contract Bank is IBank {
     function repay(address token, uint256 amount) payable external override returns (uint256) {
 
         require(msg.value == amount);
+        require(token == ethToken);
 
         if (token == ethToken) {
 
@@ -240,24 +241,24 @@ contract Bank is IBank {
 
         else {
 
-            require(!hakBorMutexOf[msg.sender]);
-            hakBorMutexOf[msg.sender] = true;
+            // require(!hakBorMutexOf[msg.sender]);
+            // hakBorMutexOf[msg.sender] = true;
 
-            require(updateBorInterest(hakBorAccountOf[msg.sender]));
-            require(amount <= hakBorAccountOf[msg.sender].deposit + hakBorAccountOf[msg.sender].interest);
+            // require(updateBorInterest(hakBorAccountOf[msg.sender]));
+            // require(amount <= hakBorAccountOf[msg.sender].deposit + hakBorAccountOf[msg.sender].interest);
 
-            emit Repay(msg.sender, token, amount);
+            // emit Repay(msg.sender, token, amount);
 
-            if (amount <= hakBorAccountOf[msg.sender].interest) {
-                hakBorAccountOf[msg.sender].interest -= amount;
-            } else {
-                hakBorAccountOf[msg.sender].interest = 0;
-                hakBorAccountOf[msg.sender].deposit -= (amount - hakBorAccountOf[msg.sender].interest);
-            }
+            // if (amount <= hakBorAccountOf[msg.sender].interest) {
+            //     hakBorAccountOf[msg.sender].interest -= amount;
+            // } else {
+            //     hakBorAccountOf[msg.sender].interest = 0;
+            //     hakBorAccountOf[msg.sender].deposit -= (amount - hakBorAccountOf[msg.sender].interest);
+            // }
 
-            hakBorMutexOf[msg.sender] = false;
+            // hakBorMutexOf[msg.sender] = false;
 
-            return hakBorAccountOf[msg.sender].deposit;
+            // return hakBorAccountOf[msg.sender].deposit;
         }
 
     }
