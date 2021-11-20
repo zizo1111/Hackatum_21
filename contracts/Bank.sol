@@ -254,23 +254,25 @@ contract Bank is IBank {
     }
     
     /**
-     * new function to update interest for deposit
-     * 
-     * 
+     * Update account interest to current block, for deposit/withdraw.
+     * @param account - user Account. Can be either eth of hak.
      */
      function updateDepInterest(Account account_) private returns (bool){
-        uint256 currPeriod = block.number - account_.lastInterestBlock; 
-        require(currPeriod > 0);
+        require(block.number - account_.lastInterestBlock > 0);
+        account_.interest += account_.deposit * 3 / 100 * (block.number - account_.lastInterestBlock) / 100;
         account_.lastInterestBlock = block.number;
-        account_.interest += ((3 * account_.deposit) / 100 ) * currPeriod;
         return true;
      }
      
+    /**
+     * Update account interest to current block, for borrow/repay.
+     * @param account - user Account. Can be either eth of hak.
+     */
     function updateBorInterest(Account account_) private returns (bool){
-        uint256 currPeriod = block.number - account_.lastInterestBlock;
-        require(currPeriod > 0);
+        require(block.number - account_.lastInterestBlock >= 0);
+        account_.interest += account_.deposit * 5 / 100 * (block.number - account_.lastInterestBlock) / 100;
         account_.lastInterestBlock = block.number;
-        account_.interest += ((5 * account_.deposit) / 100) * currPeriod;
         return true;
     }
+
 }
