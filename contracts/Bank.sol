@@ -4,7 +4,7 @@ pragma solidity 0.7.0;
 import "./interfaces/IBank.sol";
 import "./interfaces/IPriceOracle.sol";
 import "./libraries/Math.sol";
-import "./test/HAKToken.sol";
+import "@openzeppelin/contracts@3.4.2-solc-0.7/token/ERC20/ERC20.sol";
 
 
 
