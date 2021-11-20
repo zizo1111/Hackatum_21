@@ -4,7 +4,8 @@ pragma solidity 0.7.0;
 import "./interfaces/IBank.sol";
 import "./interfaces/IPriceOracle.sol";
 import "./libraries/Math.sol";
-import "./test/HAKToken.sol";
+// import "./test/HAKToken.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 
 
@@ -23,13 +24,13 @@ contract Bank is IBank {
     // mapping(address => bool) private hakBorMutexOf;
 
     IPriceOracle private priceOracle;
-    IERC20 private hakToken;
+    // IERC20 private hakToken;
     address private hakTokenAdd;
     
     constructor(address _priceOracle, address _hakToken) {
         priceOracle = IPriceOracle(_priceOracle);
         hakTokenAdd = _hakToken;
-        hakToken = IERC20(_hakToken);
+        // hakToken = IERC20(_hakToken);
         
     }
 
@@ -279,6 +280,7 @@ contract Bank is IBank {
      */
     function liquidate(address token, address account) payable external override returns (bool) {
 
+        require(account != msg.sender, '19) liquidates own account');
         require(!ethBorMutexOf[account]);
         ethBorMutexOf[account] = true;
 
