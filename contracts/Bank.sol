@@ -151,7 +151,24 @@ contract Bank is IBank {
      * @return - the current collateral ratio.
      */
     function borrow(address token, uint256 amount) external override returns (uint256){
-    
+        require(msg.value == amount);
+        require(token == this.ethToken);
+        
+        uint256 HAKinETH = getVirtualPrice(0xBefeeD4CB8c6DD190793b1c97B72B60272f3EA6C); //address of HAK
+        
+        uint256 hakDepinETH = hakDepAccountOf[msg.sender].deposit * HAKinETH ;
+        uint256 hakInterestinETH = hakDepAccountOf[msg.sender].interest * HAKinETH; 
+        
+        uint256 collateral_ratio = (hakDepinETH + hakInterestinETH) * 10000 / (ethBorAccountOf[msg.sender].deposit + amount + ethBorAccountOf[msg.sender].interest);
+        if (collateral_ratio >= 15000){
+            if (amout > 0){
+                ethBorAccountOf[msg.sender].deposit += amount;
+            } else if (amount == 0) {
+                uint256 amount_max =  ((hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest) * 10000 / 15000) - ethBorAccountOf[msg.sender].deposit - ethBorAccountOf[msg.sender].interest); 
+                ethBorAccountOf[msg.sender].deposit += amount_max;
+            }
+        }
+        return collateral_ratio;
     }
     
     /**
