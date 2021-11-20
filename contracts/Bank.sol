@@ -159,9 +159,11 @@ contract Bank is IBank {
      *                 while respecting the collateral ratio of 150%.
      * @return - the current collateral ratio.
      */
-    function borrow(address token, uint256 amount) external override returns (uint256){
+    function borrow(address token, uint256 amount) external override returns (uint256) {
+
         //require(msg.value == amount);
-        require(token == this.ethToken);
+
+        require(token == ethToken);
         
         require((!ethBorMutexOf[msg.sender]) && (!hakDepMutexOf[msg.sender]));
         ethBorMutexOf[msg.sender] = true;
@@ -177,7 +179,7 @@ contract Bank is IBank {
             if (amout > 0){
                 ethBorAccountOf[msg.sender].deposit += amount;
             } else if (amount == 0) {
-                uint256 amount_max =  ((hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest) * 10000 / 15000) - ethBorAccountOf[msg.sender].deposit - ethBorAccountOf[msg.sender].interest); 
+                uint256 amount_max =  ((hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest) * 10000 / 15000) - ethBorAccountOf[msg.sender].deposit - ethBorAccountOf[msg.sender].interest;
                 ethBorAccountOf[msg.sender].deposit += amount_max;
             }
         }
@@ -262,23 +264,30 @@ contract Bank is IBank {
      */
     function liquidate(address token, address account) payable external override returns (bool) {
 
+        require(!ethBorMutexOf[account]);
+        ethBorMutexOf[msg.sender] = true;
+
         uint256 collateral_ratio = this.getCollateralRatio(token, account);
 
-        if (collateral_ratio < 150) {
-            if (token == ethToken){
-            }
+        require (collateral_ratio < 150);
 
-            else{
-            }
-            return true;
-        }
-
-        else {
+        if (token == ethToken) {
+            //Do what? Should the ethToken be accepted as a collatoral?
+            ethBorMutexOf[msg.sender] = false;
             return false;
         }
 
+        else {
+            require (msg.value >= ethBorAccountOf[account].deposit+ethBorAccountOf[account].interest); //Do we only allow exact replayment? What do we do with the reminder?
+            ethDepAccountOf[msg.sender].deposit += ethBorAccountOf[account].deposit;
+            ethBorAccountOf[account].deposit = 0;
+            ethBorAccountOf[account].interest = 0;
+            ethBorMutexOf[msg.sender] = false;
+            return true;
+        }
     }
-    
+
+
     /**
      * The purpose of this function is to return the collateral ratio for any account.
      * The collateral ratio is computed as the value deposited divided by the value
@@ -376,9 +385,17 @@ contract Bank is IBank {
         account_.lastInterestBlock = block.number;
         return true;
     }
-    function checkDepInterest(Account account_) private returns (uint256){
-        uint256 currPeriod = block.number - account_.lastInterestBlock; 
-        uint256 interest += ((3 * account_.deposit) / 100 ) * currPeriod;
+
+
+    /**
+     * Compute account interest without update, for checking account balance.
+     * @param account_ - user Account. Can be either eth or hak.
+     * @return - current accrued interest.
+     */
+    function checkDepInterest(Account storage account_) view private returns (uint256) {
+        require(block.number - account_.lastInterestBlock >= 0);
+        uint256 interest = account_.interest + account_.deposit * 3 / 100 * (block.number - account_.lastInterestBlock) / 100;
         return interest;
     }
+
 }
