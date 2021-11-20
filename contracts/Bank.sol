@@ -234,14 +234,20 @@ contract Bank is IBank {
      */
     function borrow(address token, uint256 amount) external override returns (uint256) {
 
-        //require(msg.value == amount);
+        // require(msg.value == amount);
 
-        require(token == ethToken);
-        
+        if (token != ethToken) {
+            revert('token not supported');
+        }
+
         require((!ethBorMutexOf[msg.sender]) && (!hakDepMutexOf[msg.sender]));
         ethBorMutexOf[msg.sender] = true;
         hakDepMutexOf[msg.sender] = true;
-        
+
+        if (hakDepAccountOf[msg.sender].deposit == 0) {
+            revert('no collateral deposited');
+        }
+
         uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
         
         uint256 hakDepinETH = hakDepAccountOf[msg.sender].deposit * HAKinETH ;
@@ -260,12 +266,12 @@ contract Bank is IBank {
                 msg.sender.transfer(amount_max);
             }
         }
-        
+
         ethBorMutexOf[msg.sender] = false;
         hakDepMutexOf[msg.sender] = false;
-        
-        
+
         return collateral_ratio;
+
     }
 
 
@@ -284,52 +290,31 @@ contract Bank is IBank {
      */
     function repay(address token, uint256 amount) payable external override returns (uint256) {
 
+        if (token != ethToken) {
+            revert('token not supported');
+        }
+
         require(msg.value == amount);
-        require(token == ethToken);
 
-        if (token == ethToken) {
 
-            require(!ethBorMutexOf[msg.sender]);
-            ethBorMutexOf[msg.sender] = true;
+        require(!ethBorMutexOf[msg.sender]);
+        ethBorMutexOf[msg.sender] = true;
 
-            require(updateBorInterest(ethBorAccountOf[msg.sender]));
-            require(amount <= ethBorAccountOf[msg.sender].deposit + ethBorAccountOf[msg.sender].interest);
+        require(updateBorInterest(ethBorAccountOf[msg.sender]));
+        require(amount <= ethBorAccountOf[msg.sender].deposit + ethBorAccountOf[msg.sender].interest);
 
-            emit Repay(msg.sender, token, amount);
+        emit Repay(msg.sender, token, amount);
 
-            if (amount <= ethBorAccountOf[msg.sender].interest) {
-                ethBorAccountOf[msg.sender].interest -= amount;
-            } else {
-                ethBorAccountOf[msg.sender].interest = 0;
-                ethBorAccountOf[msg.sender].deposit -= (amount - ethBorAccountOf[msg.sender].interest);
-            }
-
-            ethBorMutexOf[msg.sender] = false;
-
-            return ethBorAccountOf[msg.sender].deposit;
+        if (amount <= ethBorAccountOf[msg.sender].interest) {
+            ethBorAccountOf[msg.sender].interest -= amount;
+        } else {
+            ethBorAccountOf[msg.sender].interest = 0;
+            ethBorAccountOf[msg.sender].deposit -= (amount - ethBorAccountOf[msg.sender].interest);
         }
 
-        else {
+        ethBorMutexOf[msg.sender] = false;
 
-            // require(!hakBorMutexOf[msg.sender]);
-            // hakBorMutexOf[msg.sender] = true;
-
-            // require(updateBorInterest(hakBorAccountOf[msg.sender]));
-            // require(amount <= hakBorAccountOf[msg.sender].deposit + hakBorAccountOf[msg.sender].interest);
-
-            // emit Repay(msg.sender, token, amount);
-
-            // if (amount <= hakBorAccountOf[msg.sender].interest) {
-            //     hakBorAccountOf[msg.sender].interest -= amount;
-            // } else {
-            //     hakBorAccountOf[msg.sender].interest = 0;
-            //     hakBorAccountOf[msg.sender].deposit -= (amount - hakBorAccountOf[msg.sender].interest);
-            // }
-
-            // hakBorMutexOf[msg.sender] = false;
-
-            // return hakBorAccountOf[msg.sender].deposit;
-        }
+        return ethBorAccountOf[msg.sender].deposit;
 
     }
 
@@ -343,9 +328,14 @@ contract Bank is IBank {
      */
     function liquidate(address token, address account) payable external override returns (bool) {
 
+        if (token != hakToken) {
+            revert('token not supported');
+        }
+
         if (account == msg.sender) {
             revert('cannot liquidate own position');
         }
+
         require(!ethBorMutexOf[account]);
         ethBorMutexOf[account] = true;
 
