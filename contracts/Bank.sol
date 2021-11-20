@@ -7,9 +7,10 @@ import "./libraries/Math.sol";
 
 
 contract Bank is IBank {
+
     using DSMath for uint256;
     address constant ethToken = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
-    
+
     mapping(address => Account) private ethDepAccountOf;
     mapping(address => Account) private ethBorAccountOf;
     mapping(address => Account) private hakDepAccountOf;
@@ -19,10 +20,10 @@ contract Bank is IBank {
     mapping(address => bool) private hakDepMutexOf;
     mapping(address => bool) private hakBorMutexOf;
 
-    
+
     constructor(address _priceOracle, address _hakToken) {}
 
-    
+
     /**
      * The purpose of this function is to allow end-users to deposit a given 
      * token amount into their bank account.
@@ -32,9 +33,11 @@ contract Bank is IBank {
      * @param amount - the amount of the given token to deposit.
      * @return - true if the deposit was successful, otherwise revert.
      */
-    function deposit(address token, uint256 amount) payable external override returns (bool){
+    function deposit(address token, uint256 amount) payable external override returns (bool) {
+
         require(msg.value == amount);
-        if (token == this.ethToken){
+
+        if (token == ethToken) {
             require(!ethDepMutexOf[msg.sender]);
             ethDepMutexOf[msg.sender] = true;
             
@@ -45,7 +48,8 @@ contract Bank is IBank {
             
             ethDepMutexOf[msg.sender] = false;
             return true;
-        }   
+        }
+
         else {
             //TODO: find a HAK token identifier
             require(!hakDepMutexOf[msg.sender]);
@@ -60,8 +64,9 @@ contract Bank is IBank {
             return true;
         }
     }   
-    
-      /**
+
+
+    /**
      * The purpose of this function is to allow end-users to withdraw a given 
      * token amount from their bank account. Upon withdrawal, the user must
      * automatically receive a 3% interest rate per 100 blocks on their deposit.
@@ -74,9 +79,11 @@ contract Bank is IBank {
      * @return - the amount that was withdrawn plus interest upon success, 
      *           otherwise revert.
      */
-    function withdraw(address token, uint256 amount) external override returns (uint256){
-        require(msg.value == amount);
-        if (token == this.ethToken){
+    function withdraw(address token, uint256 amount) external override returns (uint256) {
+
+        // require(msg.value == amount);
+
+        if (token == ethToken) {
             
             require(!ethDepMutexOf[msg.sender]);
             ethDepMutexOf[msg.sender] = true;
@@ -105,14 +112,15 @@ contract Bank is IBank {
             
             ethDepMutexOf[msg.sender] = false;
             return amount;
-        }   
+        }
+
         else {
             
             //TODO: find a HAK token identifier
             require(!hakDepMutexOf[msg.sender]);
             hakDepMutexOf[msg.sender] = true;
             
-            require(updatehakInterest(hakDepAccountOf[msg.sender]));
+            require(updateDepInterest(hakDepAccountOf[msg.sender]));
             
             require(amount <= hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest);
             if (amount == 0)
@@ -137,7 +145,8 @@ contract Bank is IBank {
             return amount;
         }
     }
-    
+
+
     /**
      * The purpose of this function is to allow users to borrow funds by using their 
      * deposited funds as collateral. The minimum ratio of deposited funds over 
@@ -152,9 +161,9 @@ contract Bank is IBank {
      */
     function borrow(address token, uint256 amount) external override returns (uint256) {
 
-        require(msg.value == amount);
+        // require(msg.value == amount);
 
-        if (token == this.ethToken) {
+        if (token == ethToken) {
 
             require(!ethBorMutexOf[msg.sender]);
             ethBorMutexOf[msg.sender] = true;
@@ -175,7 +184,8 @@ contract Bank is IBank {
         }
     
     }
-    
+
+
     /**
      * The purpose of this function is to allow users to repay their loans.
      * Loans can be repaid partially or entirely. When replaying a loan, an
@@ -193,7 +203,7 @@ contract Bank is IBank {
 
         require(msg.value == amount);
 
-        if (token == this.ethToken) {
+        if (token == ethToken) {
 
             require(!ethBorMutexOf[msg.sender]);
             ethBorMutexOf[msg.sender] = true;
@@ -238,7 +248,8 @@ contract Bank is IBank {
         }
 
     }
-    
+
+
     /**
      * The purpose of this function is to allow so called keepers to collect bad
      * debt, that is in case the collateral ratio goes below 150% for any loan. 
@@ -246,12 +257,12 @@ contract Bank is IBank {
      * @param account - the account that took out the loan that is now undercollateralized.
      * @return - true if the liquidation was successful, otherwise revert.
      */
-    function liquidate(address token, address account) payable external override returns (bool){
+    function liquidate(address token, address account) payable external override returns (bool) {
 
         uint256 collateral_ratio = this.getCollateralRatio(token, account);
 
         if (collateral_ratio < 150) {
-            if (token == this.ethToken){
+            if (token == ethToken){
             }
 
             else{
@@ -277,11 +288,11 @@ contract Bank is IBank {
      *           If the account has deposited token, but has not borrowed anything then 
      *           return MAX_INT.
      */
-    function getCollateralRatio(address token, address account) view external override returns (uint256){
-        if (token == this.ethToken){
-            if (ethDepAccountOf[msg.sender].deposit > 0){
+    function getCollateralRatio(address token, address account) view external override returns (uint256) {
+        if (token == ethToken) {
+            if (ethDepAccountOf[msg.sender].deposit > 0) {
                 if (ethBorAccountOf[msg.sender].deposit > 0) {
-                    return (ethDepAccountOf[msg.sender].deposit /ethBorAccountOf[msg.sender].deposit)*100;
+                    return (ethDepAccountOf[msg.sender].deposit / ethBorAccountOf[msg.sender].deposit)*100;
                 } else {
                     return type(uint256).max;
                 }
@@ -291,20 +302,21 @@ contract Bank is IBank {
             }
         }
         //TODO: HAK identifier
-        else{
-            if (hakDepAccountOf[msg.sender].deposit > 0){
+        else {
+            if (hakDepAccountOf[msg.sender].deposit > 0) {
                 if (hakBorAccountOf[msg.sender].deposit > 0) {
-                    return (hakhDepAccountOf[msg.sender].deposit /hakBorAccountOf[msg.sender].deposit)*100;
+                    return (hakDepAccountOf[msg.sender].deposit / hakBorAccountOf[msg.sender].deposit)*100;
                 } else {
                     return type(uint256).max;
                 }
             }
-            else{
+            else {
                 return 0;
             }
         }
     }
-    
+
+
     /**
      * The purpose of this function is to return the balance that the caller 
      * has in their own account for the given token (including interest).
@@ -312,46 +324,50 @@ contract Bank is IBank {
      * @return - the value of the caller's balance with interest, excluding debts.
      */
     function getBalance(address token) view external override returns (uint256){
-        if (token == this.ethToken){
-            require(!ethDepMutexOf[msg.sender]);
-            ethDepMutexOf[msg.sender] = true;
+        if (token == ethToken) {
+            // require(!ethDepMutexOf[msg.sender]);
+            // ethDepMutexOf[msg.sender] = true;
             
-            require(updateDepInterest(ethDepAccountOf[msg.sender]));
+            // require(updateDepInterest(ethDepAccountOf[msg.sender]));
             
-            ethDepMutexOf[msg.sender] = false;
+            // ethDepMutexOf[msg.sender] = false;
             
-            return ethDepAccountOf[msg.sender].balance + ethDepAccountOf[msg.sender].interest;
+            return ethDepAccountOf[msg.sender].deposit + ethDepAccountOf[msg.sender].interest;
         }   
         else {
             //TODO: find a HAK token identifier
-            require(!hakDepMutexOf[msg.sender]);
-            hakDepMutexOf[msg.sender] = true;
+            // require(!hakDepMutexOf[msg.sender]);
+            // hakDepMutexOf[msg.sender] = true;
             
-            require(updateDepInterest(hakDepAccountOf[msg.sender]));
+            // require(updateDepInterest(hakDepAccountOf[msg.sender]));
             
-            hakDepMutexOf[msg.sender] = false;
+            // hakDepMutexOf[msg.sender] = false;
             
-            return hakDepAccountOf[msg.sender].balance + hakDepAccountOf[msg.sender].interest;
+            return hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest;
         }
 
     }
-    
+
+
     /**
      * Update account interest to current block, for deposit/withdraw.
-     * @param account - user Account. Can be either eth of hak.
+     * @param account_ - user Account. Can be either eth or hak.
+     * @return - true if success.
      */
-     function updateDepInterest(Account account_) private returns (bool){
+    function updateDepInterest(Account storage account_) private returns (bool) {
         require(block.number - account_.lastInterestBlock > 0);
         account_.interest += account_.deposit * 3 / 100 * (block.number - account_.lastInterestBlock) / 100;
         account_.lastInterestBlock = block.number;
         return true;
-     }
-     
+    }
+
+
     /**
      * Update account interest to current block, for borrow/repay.
-     * @param account - user Account. Can be either eth of hak.
+     * @param account_ - user Account. Can be either eth or hak.
+     * @return - true if success.
      */
-    function updateBorInterest(Account account_) private returns (bool){
+    function updateBorInterest(Account storage account_) private returns (bool) {
         require(block.number - account_.lastInterestBlock >= 0);
         account_.interest += account_.deposit * 5 / 100 * (block.number - account_.lastInterestBlock) / 100;
         account_.lastInterestBlock = block.number;
