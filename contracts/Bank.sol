@@ -124,67 +124,98 @@ contract Bank is IBank {
      */
     function withdraw(address token, uint256 amount) external override returns (uint256) {
 
-        // require(msg.value == amount);
+        console.log('withdraw()');
+        console.log('withdraw()', '_hakToken :', hakToken);
+        console.log('withdraw()', 'token     :', token);
+        console.log('withdraw()', 'msg.sender:', msg.sender);
+        console.log('withdraw()', 'amount    :', amount);
+        // console.log('withdraw()', 'msg.value :', msg.value);
 
         if (token == ethToken) {
-            
+
+            console.log('withdraw()', 'Case: ETH');
+
+            // require(msg.value == amount);
+            // TypeError: "msg.value" and "callvalue()" can only be used in payable public functions.
+            // Make the function "payable" or use an internal function to avoid this error.
+
             require(!ethDepMutexOf[msg.sender]);
             ethDepMutexOf[msg.sender] = true;
-            
+
             require(updateDepInterest(ethDepAccountOf[msg.sender]));
-            
-            require(amount <= ethDepAccountOf[msg.sender].deposit + ethDepAccountOf[msg.sender].interest);
-            
-            if (amount == 0)
-            {
-                amount = ethDepAccountOf[msg.sender].deposit + ethDepAccountOf[msg.sender].interest;
+
+            if (ethDepAccountOf[msg.sender].deposit.add(ethDepAccountOf[msg.sender].interest) == 0) {
+                revert('no balance');
             }
-            
-            emit Withdraw(msg.sender, token, amount);
-            
-            if (amount <= ethDepAccountOf[msg.sender].interest)
-            {
-                ethDepAccountOf[msg.sender].interest -= amount;
+
+            if (amount > ethDepAccountOf[msg.sender].deposit.add(ethDepAccountOf[msg.sender].interest)) {
+                revert('amount exceeds balance');
             }
-            else
-            {
-                uint256 currInterest = ethDepAccountOf[msg.sender].interest;
+
+            // Withdraw all:
+            if (amount == 0) {
+                amount = ethDepAccountOf[msg.sender].deposit.add(ethDepAccountOf[msg.sender].interest);
+            }
+
+            if (amount <= ethDepAccountOf[msg.sender].interest) {
+                ethDepAccountOf[msg.sender].interest = ethDepAccountOf[msg.sender].interest.sub(amount);
+            } else {
+                ethDepAccountOf[msg.sender].deposit = ethDepAccountOf[msg.sender].deposit.sub(amount - ethDepAccountOf[msg.sender].interest);
                 ethDepAccountOf[msg.sender].interest = 0;
-                ethDepAccountOf[msg.sender].deposit -= (amount - currInterest);
             }
-            
+
+            emit Withdraw(msg.sender, token, amount);
+
             ethDepMutexOf[msg.sender] = false;
+
+            console.log('');
+
             return amount;
-        }   
-        else if(token == hakToken){
-            
-            //TODO: find a HAK token identifier
+
+        } else if (token == hakToken) {
+
+            console.log('withdraw()', 'Case: HAK');
+
             require(!hakDepMutexOf[msg.sender]);
             hakDepMutexOf[msg.sender] = true;
-            
+
             require(updateDepInterest(hakDepAccountOf[msg.sender]));
-            
-            require(amount <= hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest);
-            if (amount == 0)
-            {
-                amount = hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest;
+
+            if (hakDepAccountOf[msg.sender].deposit.add(hakDepAccountOf[msg.sender].interest) == 0) {
+                revert('no balance');
             }
-            
-            emit Withdraw(msg.sender, token, amount);
-            
-            if (amount <= hakDepAccountOf[msg.sender].interest)
-            {
-                hakDepAccountOf[msg.sender].interest -= amount;
+
+            if (amount > hakDepAccountOf[msg.sender].deposit.add(hakDepAccountOf[msg.sender].interest)) {
+                revert('amount exceeds balance');
             }
-            else
-            {
-                uint256 currInterest = hakDepAccountOf[msg.sender].interest;
+
+            // Withdraw all:
+            if (amount == 0) {
+                amount = hakDepAccountOf[msg.sender].deposit.add(hakDepAccountOf[msg.sender].interest);
+            }
+
+            if (amount <= hakDepAccountOf[msg.sender].interest) {
+                hakDepAccountOf[msg.sender].interest = hakDepAccountOf[msg.sender].interest.sub(amount);
+            } else {
+                hakDepAccountOf[msg.sender].deposit = hakDepAccountOf[msg.sender].deposit.sub(amount - hakDepAccountOf[msg.sender].interest);
                 hakDepAccountOf[msg.sender].interest = 0;
-                hakDepAccountOf[msg.sender].deposit -= (amount - currInterest);
             }
-            
+
+            emit Withdraw(msg.sender, token, amount);
+
             hakDepMutexOf[msg.sender] = false;
+
+            console.log('');
+
             return amount;
+
+        } else {
+
+            console.log('withdraw()', 'Case: Not supported');
+            console.log('');
+
+            revert('token not supported');
+
         }
     }
 
