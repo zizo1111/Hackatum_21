@@ -75,7 +75,7 @@ contract Bank is IBank {
      *           otherwise revert.
      */
     function withdraw(address token, uint256 amount) external override returns (uint256){
-        require(msg.value == amount);
+        // require(msg.value == amount);
         if (token == this.ethToken){
             
             require(!ethDepMutexOf[msg.sender]);
@@ -151,8 +151,12 @@ contract Bank is IBank {
      * @return - the current collateral ratio.
      */
     function borrow(address token, uint256 amount) external override returns (uint256){
-        require(msg.value == amount);
+        //require(msg.value == amount);
         require(token == this.ethToken);
+        
+        require((!ethBorMutexOf[msg.sender]) && (!hakDepMutexOf[msg.sender]));
+        ethBorMutexOf[msg.sender] = true;
+        hakDepMutexOf[msg.sender] = true;
         
         uint256 HAKinETH = getVirtualPrice(0xBefeeD4CB8c6DD190793b1c97B72B60272f3EA6C); //address of HAK
         
@@ -168,6 +172,10 @@ contract Bank is IBank {
                 ethBorAccountOf[msg.sender].deposit += amount_max;
             }
         }
+        
+        ethBorMutexOf[msg.sender] = false;
+        hakDepMutexOf[msg.sender] = false;
+        
         return collateral_ratio;
     }
     
@@ -247,25 +255,23 @@ contract Bank is IBank {
      */
     function getBalance(address token) view external override returns (uint256){
         if (token == this.ethToken){
-            require(!ethDepMutexOf[msg.sender]);
-            ethDepMutexOf[msg.sender] = true;
+            //require(!ethDepMutexOf[msg.sender]);
+            //ethDepMutexOf[msg.sender] = true;
+            //require(updateDepInterest(ethDepAccountOf[msg.sender]));
+            //ethDepMutexOf[msg.sender] = false;
             
-            require(updateDepInterest(ethDepAccountOf[msg.sender]));
-            
-            ethDepMutexOf[msg.sender] = false;
-            
-            return ethDepAccountOf[msg.sender].balance + ethDepAccountOf[msg.sender].interest;
+            return ethDepAccountOf[msg.sender].deposit + checkDepInterest(ethDepAccountOf[msg.sender]);
         }   
         else {
             //TODO: find a HAK token identifier
-            require(!hakDepMutexOf[msg.sender]);
-            hakDepMutexOf[msg.sender] = true;
+            //require(!hakDepMutexOf[msg.sender]);
+            //hakDepMutexOf[msg.sender] = true;
             
-            require(updateDepInterest(hakDepAccountOf[msg.sender]));
+            //require(updateDepInterest(hakDepAccountOf[msg.sender]));
             
-            hakDepMutexOf[msg.sender] = false;
+            //hakDepMutexOf[msg.sender] = false;
             
-            return hakDepAccountOf[msg.sender].balance + hakDepAccountOf[msg.sender].interest;
+            return hakDepAccountOf[msg.sender].deposit + checkDepInterest(hakDepAccountOf[msg.sender]);
         }
 
     }
@@ -277,7 +283,7 @@ contract Bank is IBank {
      */
      function updateDepInterest(Account account_) private returns (bool){
         uint256 currPeriod = block.number - account_.lastInterestBlock; 
-        require(currPeriod > 0);
+        require(currPeriod >= 0);
         account_.lastInterestBlock = block.number;
         account_.interest += ((3 * account_.deposit) / 100 ) * currPeriod;
         return true;
@@ -285,9 +291,14 @@ contract Bank is IBank {
      
     function updateBorInterest(Account account_) private returns (bool){
         uint256 currPeriod = block.number - account_.lastInterestBlock;
-        require(currPeriod > 0);
+        require(currPeriod >= 0);
         account_.lastInterestBlock = block.number;
         account_.interest += ((5 * account_.deposit) / 100) * currPeriod;
         return true;
+    }
+    function checkDepInterest(Account account_) private returns (uint256){
+        uint256 currPeriod = block.number - account_.lastInterestBlock; 
+        uint256 interest += ((3 * account_.deposit) / 100 ) * currPeriod;
+        return interest;
     }
 }
