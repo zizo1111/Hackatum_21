@@ -4,8 +4,8 @@ pragma solidity 0.7.0;
 import "./interfaces/IBank.sol";
 import "./interfaces/IPriceOracle.sol";
 import "./libraries/Math.sol";
-// import "./test/HAKToken.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "hardhat/console.sol";
 
 
 
@@ -13,6 +13,7 @@ contract Bank is IBank {
 
     using DSMath for uint256;
     address private constant ethToken = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    address private hakToken; // = 0xBefeeD4CB8c6DD190793b1c97B72B60272f3EA6C;
 
     mapping(address => Account) private ethDepAccountOf;
     mapping(address => Account) private ethBorAccountOf;
@@ -24,14 +25,17 @@ contract Bank is IBank {
     // mapping(address => bool) private hakBorMutexOf;
 
     IPriceOracle private priceOracle;
-    // IERC20 private hakToken;
-    address private hakTokenAdd;
-    
+
     constructor(address _priceOracle, address _hakToken) {
+
         priceOracle = IPriceOracle(_priceOracle);
-        hakTokenAdd = _hakToken;
-        // hakToken = IERC20(_hakToken);
-        
+        hakToken = _hakToken;
+
+        console.log('constructor()');
+        console.log('constructor()', '_priceOracle:', _priceOracle);
+        console.log('constructor()', '_hakToken   :', _hakToken);
+        console.log('');
+
     }
 
 
@@ -46,35 +50,63 @@ contract Bank is IBank {
      */
     function deposit(address token, uint256 amount) payable external override returns (bool) {
 
-        require(msg.value == amount);
+        console.log('deposit()');
+        console.log('deposit()', '_hakToken :', hakToken);
+        console.log('deposit()', 'token     :', token);
+        console.log('deposit()', 'msg.sender:', msg.sender);
+        console.log('deposit()', 'amount    :', amount);
+        console.log('deposit()', 'msg.value :', msg.value);
 
         if (token == ethToken) {
+
+            console.log('deposit()', 'Case: ETH');
+
+            require(msg.value == amount);
+
             require(!ethDepMutexOf[msg.sender]);
             ethDepMutexOf[msg.sender] = true;
             
-            require(updateDepInterest(ethDepAccountOf[msg.sender])); 
-            
+            require(updateDepInterest(ethDepAccountOf[msg.sender]));
+
+            ethDepAccountOf[msg.sender].deposit = ethDepAccountOf[msg.sender].deposit.add(amount);
+
             emit Deposit(msg.sender, token, amount);
-            ethDepAccountOf[msg.sender].deposit += amount;
             
             ethDepMutexOf[msg.sender] = false;
-            return true;
-        }
 
-        else {
-            //TODO: find a HAK token identifier
+            console.log('');
+
+            return true;
+
+        } else if (token == hakToken) {
+
+            console.log('deposit()', 'Case: HAK');
+
             require(!hakDepMutexOf[msg.sender]);
             hakDepMutexOf[msg.sender] = true;
-            
+
             require(updateDepInterest(hakDepAccountOf[msg.sender]));
             
+            hakDepAccountOf[msg.sender].deposit = hakDepAccountOf[msg.sender].deposit.add(amount);
+
             emit Deposit(msg.sender, token, amount);
-            hakDepAccountOf[msg.sender].deposit += amount;
-            
+
             hakDepMutexOf[msg.sender] = false;
+
+            console.log('');
+
             return true;
+
+        } else {
+
+            console.log('deposit()', 'Case: Not supported');
+            console.log('');
+
+            revert('token not supported');
+
         }
-    }   
+
+    }
 
 
     /**
@@ -124,7 +156,7 @@ contract Bank is IBank {
             ethDepMutexOf[msg.sender] = false;
             return amount;
         }   
-        else if(token == hakTokenAdd){
+        else if(token == hakToken){
             
             //TODO: find a HAK token identifier
             require(!hakDepMutexOf[msg.sender]);
@@ -179,7 +211,7 @@ contract Bank is IBank {
         ethBorMutexOf[msg.sender] = true;
         hakDepMutexOf[msg.sender] = true;
         
-        uint256 HAKinETH = priceOracle.getVirtualPrice(hakTokenAdd); //address of HAK
+        uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
         
         uint256 hakDepinETH = hakDepAccountOf[msg.sender].deposit * HAKinETH ;
         uint256 hakInterestinETH = hakDepAccountOf[msg.sender].interest * HAKinETH; 
@@ -284,7 +316,7 @@ contract Bank is IBank {
         require(!ethBorMutexOf[account]);
         ethBorMutexOf[account] = true;
 
-        uint256 HAKinETH = priceOracle.getVirtualPrice(hakTokenAdd); //address of HAK
+        uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
         
         uint256 hakDepinETH = hakDepAccountOf[account].deposit * HAKinETH ;
         uint256 hakInterestinETH = hakDepAccountOf[account].interest * HAKinETH;
@@ -322,10 +354,10 @@ contract Bank is IBank {
      *           return MAX_INT.
      */
     function getCollateralRatio(address token, address account) view external override returns (uint256){
-        if (token == hakTokenAdd){
+        if (token == hakToken){
             if (hakDepAccountOf[account].deposit > 0){
                 if (ethBorAccountOf[account].deposit > 0) {
-                    uint256 HAKinETH = priceOracle.getVirtualPrice(hakTokenAdd); //address of HAK
+                    uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
         
                     uint256 hakDepinETH = hakDepAccountOf[account].deposit * HAKinETH ;
                     uint256 hakInterestinETH = hakDepAccountOf[account].interest * HAKinETH; 
