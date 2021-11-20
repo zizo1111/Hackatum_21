@@ -20,11 +20,11 @@ contract Bank is IBank {
     mapping(address => bool) private hakDepMutexOf;
     // mapping(address => bool) private hakBorMutexOf;
 
-    address priceOracle;
+    IPriceOracle priceOracle;
     address hakToken;
     
     constructor(address _priceOracle, address _hakToken) {
-        priceOracle = PriceOracle();
+        priceOracle = IPriceOracle(_priceOracle);
         hakToken = _hakToken;
         
     }
@@ -185,9 +185,11 @@ contract Bank is IBank {
                 uint256 newCollateralRatio = collateral_ratio;
                 emit Borrow(msg.sender, token, amount, newCollateralRatio);
                 ethBorAccountOf[msg.sender].deposit += amount;
+                msg.sender.transfer(amount);
             } else if (amount == 0) {
                 uint256 amount_max =  (((hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest) * 10000 / 15000) - ethBorAccountOf[msg.sender].deposit - ethBorAccountOf[msg.sender].interest); 
                 ethBorAccountOf[msg.sender].deposit += amount_max;
+                msg.sender.transfer(amount_max);
             }
         }
         
@@ -274,15 +276,19 @@ contract Bank is IBank {
     function liquidate(address token, address account) payable external override returns (bool) {
 
         require(!ethBorMutexOf[account]);
-        ethBorMutexOf[msg.sender] = true;
+        ethBorMutexOf[account] = true;
 
-        uint256 collateral_ratio = this.getCollateralRatio(token, account);
+        uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
+        
+        uint256 hakDepinETH = hakDepAccountOf[account].deposit * HAKinETH ;
+        uint256 hakInterestinETH = hakDepAccountOf[account].interest * HAKinETH;
+        uint256 collateral_ratio = (hakDepinETH + hakInterestinETH) * 10000 / (ethBorAccountOf[account].deposit + ethBorAccountOf[msg.sender].interest);
 
         require (collateral_ratio < 150);
 
         if (token == ethToken) {
             //Do what? Should the ethToken be accepted as a collatoral?
-            ethBorMutexOf[msg.sender] = false;
+            ethBorMutexOf[account] = false;
             return false;
         }
 
@@ -291,7 +297,7 @@ contract Bank is IBank {
             ethDepAccountOf[msg.sender].deposit += ethBorAccountOf[account].deposit;
             ethBorAccountOf[account].deposit = 0;
             ethBorAccountOf[account].interest = 0;
-            ethBorMutexOf[msg.sender] = false;
+            ethBorMutexOf[account] = false;
             return true;
         }
     }
@@ -310,10 +316,10 @@ contract Bank is IBank {
      *           return MAX_INT.
      */
     function getCollateralRatio(address token, address account) view external override returns (uint256){
-        if (token == this.hakToken){
+        if (token == hakToken){
             if (hakDepAccountOf[account].deposit > 0){
                 if (ethBorAccountOf[account].deposit > 0) {
-                    uint256 HAKinETH = this.priceOracle.getVirtualPrice(this.hakToken); //address of HAK
+                    uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
         
                     uint256 hakDepinETH = hakDepAccountOf[account].deposit * HAKinETH ;
                     uint256 hakInterestinETH = hakDepAccountOf[account].interest * HAKinETH; 
@@ -350,7 +356,6 @@ contract Bank is IBank {
             }
             
         }
-        revert;
 
     }
 
