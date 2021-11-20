@@ -4,25 +4,41 @@ pragma solidity 0.7.0;
 import "./interfaces/IBank.sol";
 import "./interfaces/IPriceOracle.sol";
 import "./libraries/Math.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import "hardhat/console.sol";
+
 
 
 contract Bank is IBank {
+
     using DSMath for uint256;
-    address constant ethToken = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
-    
+    address private constant ethToken = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    address private hakToken; // = 0xBefeeD4CB8c6DD190793b1c97B72B60272f3EA6C;
+
     mapping(address => Account) private ethDepAccountOf;
     mapping(address => Account) private ethBorAccountOf;
     mapping(address => Account) private hakDepAccountOf;
-    mapping(address => Account) private hakBorAccountOf;
+    // mapping(address => Account) private hakBorAccountOf;
     mapping(address => bool) private ethDepMutexOf;
     mapping(address => bool) private ethBorMutexOf;
     mapping(address => bool) private hakDepMutexOf;
-    mapping(address => bool) private hakBorMutexOf;
+    // mapping(address => bool) private hakBorMutexOf;
 
-    
-    constructor(address _priceOracle, address _hakToken) {}
+    IPriceOracle private priceOracle;
 
-    
+    constructor(address _priceOracle, address _hakToken) {
+
+        priceOracle = IPriceOracle(_priceOracle);
+        hakToken = _hakToken;
+
+        console.log('constructor()');
+        console.log('constructor()', '_priceOracle:', _priceOracle);
+        console.log('constructor()', '_hakToken   :', _hakToken);
+        console.log('');
+
+    }
+
+
     /**
      * The purpose of this function is to allow end-users to deposit a given 
      * token amount into their bank account.
@@ -32,36 +48,68 @@ contract Bank is IBank {
      * @param amount - the amount of the given token to deposit.
      * @return - true if the deposit was successful, otherwise revert.
      */
-    function deposit(address token, uint256 amount) payable external override returns (bool){
-        require(msg.value == amount);
-        if (token == this.ethToken){
+    function deposit(address token, uint256 amount) payable external override returns (bool) {
+
+        console.log('deposit()');
+        console.log('deposit()', '_hakToken :', hakToken);
+        console.log('deposit()', 'token     :', token);
+        console.log('deposit()', 'msg.sender:', msg.sender);
+        console.log('deposit()', 'amount    :', amount);
+        console.log('deposit()', 'msg.value :', msg.value);
+
+        if (token == ethToken) {
+
+            console.log('deposit()', 'Case: ETH');
+
+            require(msg.value == amount);
+
             require(!ethDepMutexOf[msg.sender]);
             ethDepMutexOf[msg.sender] = true;
             
-            require(updateDepInterest(ethDepAccountOf[msg.sender])); 
-            
+            require(updateDepInterest(ethDepAccountOf[msg.sender]));
+
+            ethDepAccountOf[msg.sender].deposit = ethDepAccountOf[msg.sender].deposit.add(amount);
+
             emit Deposit(msg.sender, token, amount);
-            ethDepAccountOf[msg.sender].deposit += amount;
             
             ethDepMutexOf[msg.sender] = false;
+
+            console.log('');
+
             return true;
-        }   
-        else {
-            //TODO: find a HAK token identifier
+
+        } else if (token == hakToken) {
+
+            console.log('deposit()', 'Case: HAK');
+
             require(!hakDepMutexOf[msg.sender]);
             hakDepMutexOf[msg.sender] = true;
-            
+
             require(updateDepInterest(hakDepAccountOf[msg.sender]));
             
+            hakDepAccountOf[msg.sender].deposit = hakDepAccountOf[msg.sender].deposit.add(amount);
+
             emit Deposit(msg.sender, token, amount);
-            hakDepAccountOf[msg.sender].deposit += amount;
-            
+
             hakDepMutexOf[msg.sender] = false;
+
+            console.log('');
+
             return true;
+
+        } else {
+
+            console.log('deposit()', 'Case: Not supported');
+            console.log('');
+
+            revert('token not supported');
+
         }
-    }   
-    
-      /**
+
+    }
+
+
+    /**
      * The purpose of this function is to allow end-users to withdraw a given 
      * token amount from their bank account. Upon withdrawal, the user must
      * automatically receive a 3% interest rate per 100 blocks on their deposit.
@@ -74,70 +122,104 @@ contract Bank is IBank {
      * @return - the amount that was withdrawn plus interest upon success, 
      *           otherwise revert.
      */
-    function withdraw(address token, uint256 amount) external override returns (uint256){
-        require(msg.value == amount);
-        if (token == this.ethToken){
-            
+    function withdraw(address token, uint256 amount) external override returns (uint256) {
+
+        console.log('withdraw()');
+        console.log('withdraw()', '_hakToken :', hakToken);
+        console.log('withdraw()', 'token     :', token);
+        console.log('withdraw()', 'msg.sender:', msg.sender);
+        console.log('withdraw()', 'amount    :', amount);
+        // console.log('withdraw()', 'msg.value :', msg.value);
+
+        if (token == ethToken) {
+
+            console.log('withdraw()', 'Case: ETH');
+
+            // require(msg.value == amount);
+            // TypeError: "msg.value" and "callvalue()" can only be used in payable public functions.
+            // Make the function "payable" or use an internal function to avoid this error.
+
             require(!ethDepMutexOf[msg.sender]);
             ethDepMutexOf[msg.sender] = true;
-            
+
             require(updateDepInterest(ethDepAccountOf[msg.sender]));
-            
-            require(amount <= ethDepAccountOf[msg.sender].deposit + ethDepAccountOf[msg.sender].interest);
-            
-            if (amount == 0)
-            {
-                amount = ethDepAccountOf[msg.sender].deposit + ethDepAccountOf[msg.sender].interest;
+
+            if (ethDepAccountOf[msg.sender].deposit.add(ethDepAccountOf[msg.sender].interest) == 0) {
+                revert('no balance');
             }
-            
-            emit Withdraw(msg.sender, token, amount);
-            
-            if (amount <= ethDepAccountOf[msg.sender].interest)
-            {
-                ethDepAccountOf[msg.sender].interest -= amount;
+
+            if (amount > ethDepAccountOf[msg.sender].deposit.add(ethDepAccountOf[msg.sender].interest)) {
+                revert('amount exceeds balance');
             }
-            else
-            {
-                uint256 currInterest = ethDepAccountOf[msg.sender].interest;
+
+            // Withdraw all:
+            if (amount == 0) {
+                amount = ethDepAccountOf[msg.sender].deposit.add(ethDepAccountOf[msg.sender].interest);
+            }
+
+            if (amount <= ethDepAccountOf[msg.sender].interest) {
+                ethDepAccountOf[msg.sender].interest = ethDepAccountOf[msg.sender].interest.sub(amount);
+            } else {
+                ethDepAccountOf[msg.sender].deposit = ethDepAccountOf[msg.sender].deposit.sub(amount - ethDepAccountOf[msg.sender].interest);
                 ethDepAccountOf[msg.sender].interest = 0;
-                ethDepAccountOf[msg.sender].deposit -= (amount - currInterest);
             }
-            
+
+            emit Withdraw(msg.sender, token, amount);
+
             ethDepMutexOf[msg.sender] = false;
+
+            console.log('');
+
             return amount;
-        }   
-        else {
-            
-            //TODO: find a HAK token identifier
+
+        } else if (token == hakToken) {
+
+            console.log('withdraw()', 'Case: HAK');
+
             require(!hakDepMutexOf[msg.sender]);
             hakDepMutexOf[msg.sender] = true;
-            
-            require(updatehakInterest(hakDepAccountOf[msg.sender]));
-            
-            require(amount <= hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest);
-            if (amount == 0)
-            {
-                amount = hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest;
+
+            require(updateDepInterest(hakDepAccountOf[msg.sender]));
+
+            if (hakDepAccountOf[msg.sender].deposit.add(hakDepAccountOf[msg.sender].interest) == 0) {
+                revert('no balance');
             }
-            
-            emit Withdraw(msg.sender, token, amount);
-            
-            if (amount <= hakDepAccountOf[msg.sender].interest)
-            {
-                hakDepAccountOf[msg.sender].interest -= amount;
+
+            if (amount > hakDepAccountOf[msg.sender].deposit.add(hakDepAccountOf[msg.sender].interest)) {
+                revert('amount exceeds balance');
             }
-            else
-            {
-                uint256 currInterest = hakDepAccountOf[msg.sender].interest;
+
+            // Withdraw all:
+            if (amount == 0) {
+                amount = hakDepAccountOf[msg.sender].deposit.add(hakDepAccountOf[msg.sender].interest);
+            }
+
+            if (amount <= hakDepAccountOf[msg.sender].interest) {
+                hakDepAccountOf[msg.sender].interest = hakDepAccountOf[msg.sender].interest.sub(amount);
+            } else {
+                hakDepAccountOf[msg.sender].deposit = hakDepAccountOf[msg.sender].deposit.sub(amount - hakDepAccountOf[msg.sender].interest);
                 hakDepAccountOf[msg.sender].interest = 0;
-                hakDepAccountOf[msg.sender].deposit -= (amount - currInterest);
             }
-            
+
+            emit Withdraw(msg.sender, token, amount);
+
             hakDepMutexOf[msg.sender] = false;
+
+            console.log('');
+
             return amount;
+
+        } else {
+
+            console.log('withdraw()', 'Case: Not supported');
+            console.log('');
+
+            revert('token not supported');
+
         }
     }
-    
+
+
     /**
      * The purpose of this function is to allow users to borrow funds by using their 
      * deposited funds as collateral. The minimum ratio of deposited funds over 
@@ -152,30 +234,47 @@ contract Bank is IBank {
      */
     function borrow(address token, uint256 amount) external override returns (uint256) {
 
-        require(msg.value == amount);
+        // require(msg.value == amount);
 
-        if (token == this.ethToken) {
-
-            require(!ethBorMutexOf[msg.sender]);
-            ethBorMutexOf[msg.sender] = true;
-
-            require(updateBorInterest(ethBorAccountOf[msg.sender]));
-
-            ethBorMutexOf[msg.sender] = false;
+        if (token != ethToken) {
+            revert('token not supported');
         }
 
-        else {
+        require((!ethBorMutexOf[msg.sender]) && (!hakDepMutexOf[msg.sender]));
+        ethBorMutexOf[msg.sender] = true;
+        hakDepMutexOf[msg.sender] = true;
 
-            require(!hakBorMutexOf[msg.sender]);
-            hakBorMutexOf[msg.sender] = true;
-
-            require(updateBorInterest(hakBorAccountOf[msg.sender]));
-
-            hakBorMutexOf[msg.sender] = false;
+        if (hakDepAccountOf[msg.sender].deposit == 0) {
+            revert('no collateral deposited');
         }
-    
+
+        uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
+        
+        uint256 hakDepinETH = hakDepAccountOf[msg.sender].deposit * HAKinETH ;
+        uint256 hakInterestinETH = hakDepAccountOf[msg.sender].interest * HAKinETH; 
+        
+        uint256 collateral_ratio = (hakDepinETH + hakInterestinETH) * 10000 / (ethBorAccountOf[msg.sender].deposit + amount + ethBorAccountOf[msg.sender].interest);
+        if (collateral_ratio >= 15000){
+            if (amount > 0){
+                uint256 newCollateralRatio = collateral_ratio;
+                emit Borrow(msg.sender, token, amount, newCollateralRatio);
+                ethBorAccountOf[msg.sender].deposit += amount;
+                msg.sender.transfer(amount);
+            } else if (amount == 0) {
+                uint256 amount_max =  (((hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest) * 10000 / 15000) - ethBorAccountOf[msg.sender].deposit - ethBorAccountOf[msg.sender].interest); 
+                ethBorAccountOf[msg.sender].deposit += amount_max;
+                msg.sender.transfer(amount_max);
+            }
+        }
+
+        ethBorMutexOf[msg.sender] = false;
+        hakDepMutexOf[msg.sender] = false;
+
+        return collateral_ratio;
+
     }
-    
+
+
     /**
      * The purpose of this function is to allow users to repay their loans.
      * Loans can be repaid partially or entirely. When replaying a loan, an
@@ -191,54 +290,35 @@ contract Bank is IBank {
      */
     function repay(address token, uint256 amount) payable external override returns (uint256) {
 
+        if (token != ethToken) {
+            revert('token not supported');
+        }
+
         require(msg.value == amount);
 
-        if (token == this.ethToken) {
 
-            require(!ethBorMutexOf[msg.sender]);
-            ethBorMutexOf[msg.sender] = true;
+        require(!ethBorMutexOf[msg.sender]);
+        ethBorMutexOf[msg.sender] = true;
 
-            require(updateBorInterest(ethBorAccountOf[msg.sender]));
-            require(amount <= ethBorAccountOf[msg.sender].deposit + ethBorAccountOf[msg.sender].interest);
+        require(updateBorInterest(ethBorAccountOf[msg.sender]));
+        require(amount <= ethBorAccountOf[msg.sender].deposit + ethBorAccountOf[msg.sender].interest);
 
-            emit Repay(msg.sender, token, amount);
+        emit Repay(msg.sender, token, amount);
 
-            if (amount <= ethBorAccountOf[msg.sender].interest) {
-                ethBorAccountOf[msg.sender].interest -= amount;
-            } else {
-                ethBorAccountOf[msg.sender].interest = 0;
-                ethBorAccountOf[msg.sender].deposit -= (amount - ethBorAccountOf[msg.sender].interest);
-            }
-
-            ethBorMutexOf[msg.sender] = false;
-
-            return ethBorAccountOf[msg.sender].deposit;
+        if (amount <= ethBorAccountOf[msg.sender].interest) {
+            ethBorAccountOf[msg.sender].interest -= amount;
+        } else {
+            ethBorAccountOf[msg.sender].interest = 0;
+            ethBorAccountOf[msg.sender].deposit -= (amount - ethBorAccountOf[msg.sender].interest);
         }
 
-        else {
+        ethBorMutexOf[msg.sender] = false;
 
-            require(!hakBorMutexOf[msg.sender]);
-            hakBorMutexOf[msg.sender] = true;
-
-            require(updateBorInterest(hakBorAccountOf[msg.sender]));
-            require(amount <= hakBorAccountOf[msg.sender].deposit + hakBorAccountOf[msg.sender].interest);
-
-            emit Repay(msg.sender, token, amount);
-
-            if (amount <= hakBorAccountOf[msg.sender].interest) {
-                hakBorAccountOf[msg.sender].interest -= amount;
-            } else {
-                hakBorAccountOf[msg.sender].interest = 0;
-                hakBorAccountOf[msg.sender].deposit -= (amount - hakBorAccountOf[msg.sender].interest);
-            }
-
-            hakBorMutexOf[msg.sender] = false;
-
-            return hakBorAccountOf[msg.sender].deposit;
-        }
+        return ethBorAccountOf[msg.sender].deposit;
 
     }
-    
+
+
     /**
      * The purpose of this function is to allow so called keepers to collect bad
      * debt, that is in case the collateral ratio goes below 150% for any loan. 
@@ -246,25 +326,44 @@ contract Bank is IBank {
      * @param account - the account that took out the loan that is now undercollateralized.
      * @return - true if the liquidation was successful, otherwise revert.
      */
-    function liquidate(address token, address account) payable external override returns (bool){
+    function liquidate(address token, address account) payable external override returns (bool) {
 
-        uint256 collateral_ratio = this.getCollateralRatio(token, account);
-
-        if (collateral_ratio < 150) {
-            if (token == this.ethToken){
-            }
-
-            else{
-            }
-            return true;
+        if (token != hakToken) {
+            revert('token not supported');
         }
 
-        else {
+        if (account == msg.sender) {
+            revert('cannot liquidate own position');
+        }
+
+        require(!ethBorMutexOf[account]);
+        ethBorMutexOf[account] = true;
+
+        uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
+        
+        uint256 hakDepinETH = hakDepAccountOf[account].deposit * HAKinETH ;
+        uint256 hakInterestinETH = hakDepAccountOf[account].interest * HAKinETH;
+        uint256 collateral_ratio = (hakDepinETH + hakInterestinETH) * 10000 / (ethBorAccountOf[account].deposit + ethBorAccountOf[msg.sender].interest);
+
+        require (collateral_ratio < 150);
+
+        if (token == ethToken) {
+            //Do what? Should the ethToken be accepted as a collatoral?
+            ethBorMutexOf[account] = false;
             return false;
         }
 
+        else {
+            require (msg.value >= ethBorAccountOf[account].deposit+ethBorAccountOf[account].interest); //Do we only allow exact replayment? What do we do with the reminder?
+            ethDepAccountOf[msg.sender].deposit += ethBorAccountOf[account].deposit;
+            ethBorAccountOf[account].deposit = 0;
+            ethBorAccountOf[account].interest = 0;
+            ethBorMutexOf[account] = false;
+            return true;
+        }
     }
-    
+
+
     /**
      * The purpose of this function is to return the collateral ratio for any account.
      * The collateral ratio is computed as the value deposited divided by the value
@@ -278,33 +377,29 @@ contract Bank is IBank {
      *           return MAX_INT.
      */
     function getCollateralRatio(address token, address account) view external override returns (uint256){
-        if (token == this.ethToken){
-            if (ethDepAccountOf[msg.sender].deposit > 0){
-                if (ethBorAccountOf[msg.sender].deposit > 0) {
-                    return (ethDepAccountOf[msg.sender].deposit /ethBorAccountOf[msg.sender].deposit)*100;
-                } else {
+        if (token == hakToken){
+            if (hakDepAccountOf[account].deposit > 0){
+                if (ethBorAccountOf[account].deposit > 0) {
+                    uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
+        
+                    uint256 hakDepinETH = hakDepAccountOf[account].deposit * HAKinETH ;
+                    uint256 hakInterestinETH = hakDepAccountOf[account].interest * HAKinETH; 
+                    
+                    return (hakDepinETH + hakInterestinETH) * 10000 / (ethBorAccountOf[account].deposit + ethBorAccountOf[account].interest);
+                }
+                else
+                {
                     return type(uint256).max;
                 }
             }
-            else{
-                return 0;
-            }
-        }
-        //TODO: HAK identifier
-        else{
-            if (hakDepAccountOf[msg.sender].deposit > 0){
-                if (hakBorAccountOf[msg.sender].deposit > 0) {
-                    return (hakhDepAccountOf[msg.sender].deposit /hakBorAccountOf[msg.sender].deposit)*100;
-                } else {
-                    return type(uint256).max;
-                }
-            }
-            else{
+            else
+            {
                 return 0;
             }
         }
     }
-    
+
+
     /**
      * The purpose of this function is to return the balance that the caller 
      * has in their own account for the given token (including interest).
@@ -312,50 +407,55 @@ contract Bank is IBank {
      * @return - the value of the caller's balance with interest, excluding debts.
      */
     function getBalance(address token) view external override returns (uint256){
-        if (token == this.ethToken){
-            require(!ethDepMutexOf[msg.sender]);
-            ethDepMutexOf[msg.sender] = true;
-            
-            require(updateDepInterest(ethDepAccountOf[msg.sender]));
-            
-            ethDepMutexOf[msg.sender] = false;
-            
-            return ethDepAccountOf[msg.sender].balance + ethDepAccountOf[msg.sender].interest;
+        if (token == ethToken){
+  
+            return ethDepAccountOf[msg.sender].deposit + checkDepInterest(ethDepAccountOf[msg.sender]);
         }   
         else {
-            //TODO: find a HAK token identifier
-            require(!hakDepMutexOf[msg.sender]);
-            hakDepMutexOf[msg.sender] = true;
+            if (token == ethToken){
+                return hakDepAccountOf[msg.sender].deposit + checkDepInterest(hakDepAccountOf[msg.sender]);
+            }
             
-            require(updateDepInterest(hakDepAccountOf[msg.sender]));
-            
-            hakDepMutexOf[msg.sender] = false;
-            
-            return hakDepAccountOf[msg.sender].balance + hakDepAccountOf[msg.sender].interest;
         }
 
     }
-    
+
+
     /**
      * Update account interest to current block, for deposit/withdraw.
-     * @param account - user Account. Can be either eth of hak.
+     * @param account_ - user Account. Can be either eth or hak.
+     * @return - true if success.
      */
-     function updateDepInterest(Account account_) private returns (bool){
+    function updateDepInterest(Account storage account_) private returns (bool) {
         require(block.number - account_.lastInterestBlock > 0);
         account_.interest += account_.deposit * 3 / 100 * (block.number - account_.lastInterestBlock) / 100;
         account_.lastInterestBlock = block.number;
         return true;
-     }
-     
+    }
+
+
     /**
      * Update account interest to current block, for borrow/repay.
-     * @param account - user Account. Can be either eth of hak.
+     * @param account_ - user Account. Can be either eth or hak.
+     * @return - true if success.
      */
-    function updateBorInterest(Account account_) private returns (bool){
+    function updateBorInterest(Account storage account_) private returns (bool) {
         require(block.number - account_.lastInterestBlock >= 0);
         account_.interest += account_.deposit * 5 / 100 * (block.number - account_.lastInterestBlock) / 100;
         account_.lastInterestBlock = block.number;
         return true;
+    }
+
+
+    /**
+     * Compute account interest without update, for checking account balance.
+     * @param account_ - user Account. Can be either eth or hak.
+     * @return - current accrued interest.
+     */
+    function checkDepInterest(Account storage account_) view private returns (uint256) {
+        require(block.number - account_.lastInterestBlock >= 0);
+        uint256 interest = account_.interest + account_.deposit * 3 / 100 * (block.number - account_.lastInterestBlock) / 100;
+        return interest;
     }
 
 }
