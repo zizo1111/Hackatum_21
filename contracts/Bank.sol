@@ -138,7 +138,7 @@ contract Bank is IBank {
         }
     }
     
-        /**
+    /**
      * The purpose of this function is to allow users to borrow funds by using their 
      * deposited funds as collateral. The minimum ratio of deposited funds over 
      * borrowed funds must not be less than 150%.
@@ -150,7 +150,29 @@ contract Bank is IBank {
      *                 while respecting the collateral ratio of 150%.
      * @return - the current collateral ratio.
      */
-    function borrow(address token, uint256 amount) external override returns (uint256){
+    function borrow(address token, uint256 amount) external override returns (uint256) {
+
+        require(msg.value == amount);
+
+        if (token == this.ethToken) {
+
+            require(!ethBorMutexOf[msg.sender]);
+            ethBorMutexOf[msg.sender] = true;
+
+            require(updateBorInterest(ethBorAccountOf[msg.sender]));
+
+            ethBorMutexOf[msg.sender] = false;
+        }
+
+        else {
+
+            require(!hakBorMutexOf[msg.sender]);
+            hakBorMutexOf[msg.sender] = true;
+
+            require(updateBorInterest(hakBorAccountOf[msg.sender]));
+
+            hakBorMutexOf[msg.sender] = false;
+        }
     
     }
     
@@ -167,8 +189,54 @@ contract Bank is IBank {
      * @param amount - the amount to repay including the interest.
      * @return - the amount still left to pay for this loan, excluding interest.
      */
-    function repay(address token, uint256 amount) payable external override returns (uint256){
-    
+    function repay(address token, uint256 amount) payable external override returns (uint256) {
+
+        require(msg.value == amount);
+
+        if (token == this.ethToken) {
+
+            require(!ethBorMutexOf[msg.sender]);
+            ethBorMutexOf[msg.sender] = true;
+
+            require(updateBorInterest(ethBorAccountOf[msg.sender]));
+            require(amount <= ethBorAccountOf[msg.sender].deposit + ethBorAccountOf[msg.sender].interest);
+
+            emit Repay(msg.sender, token, amount);
+
+            if (amount <= ethBorAccountOf[msg.sender].interest) {
+                ethBorAccountOf[msg.sender].interest -= amount;
+            } else {
+                ethBorAccountOf[msg.sender].interest = 0;
+                ethBorAccountOf[msg.sender].deposit -= (amount - ethBorAccountOf[msg.sender].interest);
+            }
+
+            ethBorMutexOf[msg.sender] = false;
+
+            return ethBorAccountOf[msg.sender].deposit;
+        }
+
+        else {
+
+            require(!hakBorMutexOf[msg.sender]);
+            hakBorMutexOf[msg.sender] = true;
+
+            require(updateBorInterest(hakBorAccountOf[msg.sender]));
+            require(amount <= hakBorAccountOf[msg.sender].deposit + hakBorAccountOf[msg.sender].interest);
+
+            emit Repay(msg.sender, token, amount);
+
+            if (amount <= hakBorAccountOf[msg.sender].interest) {
+                hakBorAccountOf[msg.sender].interest -= amount;
+            } else {
+                hakBorAccountOf[msg.sender].interest = 0;
+                hakBorAccountOf[msg.sender].deposit -= (amount - hakBorAccountOf[msg.sender].interest);
+            }
+
+            hakBorMutexOf[msg.sender] = false;
+
+            return hakBorAccountOf[msg.sender].deposit;
+        }
+
     }
     
     /**
