@@ -138,7 +138,7 @@ contract Bank is IBank {
         }
     }
     
-        /**
+    /**
      * The purpose of this function is to allow users to borrow funds by using their 
      * deposited funds as collateral. The minimum ratio of deposited funds over 
      * borrowed funds must not be less than 150%.
@@ -150,7 +150,29 @@ contract Bank is IBank {
      *                 while respecting the collateral ratio of 150%.
      * @return - the current collateral ratio.
      */
-    function borrow(address token, uint256 amount) external override returns (uint256){
+    function borrow(address token, uint256 amount) external override returns (uint256) {
+
+        require(msg.value == amount);
+
+        if (token == this.ethToken) {
+
+            require(!ethBorMutexOf[msg.sender]);
+            ethBorMutexOf[msg.sender] = true;
+
+            require(updateBorInterest(ethBorAccountOf[msg.sender]));
+
+            ethBorMutexOf[msg.sender] = false;
+        }
+
+        else {
+
+            require(!hakBorMutexOf[msg.sender]);
+            hakBorMutexOf[msg.sender] = true;
+
+            require(updateBorInterest(hakBorAccountOf[msg.sender]));
+
+            hakBorMutexOf[msg.sender] = false;
+        }
     
     }
     
@@ -167,8 +189,54 @@ contract Bank is IBank {
      * @param amount - the amount to repay including the interest.
      * @return - the amount still left to pay for this loan, excluding interest.
      */
-    function repay(address token, uint256 amount) payable external override returns (uint256){
-    
+    function repay(address token, uint256 amount) payable external override returns (uint256) {
+
+        require(msg.value == amount);
+
+        if (token == this.ethToken) {
+
+            require(!ethBorMutexOf[msg.sender]);
+            ethBorMutexOf[msg.sender] = true;
+
+            require(updateBorInterest(ethBorAccountOf[msg.sender]));
+            require(amount <= ethBorAccountOf[msg.sender].deposit + ethBorAccountOf[msg.sender].interest);
+
+            emit Repay(msg.sender, token, amount);
+
+            if (amount <= ethBorAccountOf[msg.sender].interest) {
+                ethBorAccountOf[msg.sender].interest -= amount;
+            } else {
+                ethBorAccountOf[msg.sender].interest = 0;
+                ethBorAccountOf[msg.sender].deposit -= (amount - ethBorAccountOf[msg.sender].interest);
+            }
+
+            ethBorMutexOf[msg.sender] = false;
+
+            return ethBorAccountOf[msg.sender].deposit;
+        }
+
+        else {
+
+            require(!hakBorMutexOf[msg.sender]);
+            hakBorMutexOf[msg.sender] = true;
+
+            require(updateBorInterest(hakBorAccountOf[msg.sender]));
+            require(amount <= hakBorAccountOf[msg.sender].deposit + hakBorAccountOf[msg.sender].interest);
+
+            emit Repay(msg.sender, token, amount);
+
+            if (amount <= hakBorAccountOf[msg.sender].interest) {
+                hakBorAccountOf[msg.sender].interest -= amount;
+            } else {
+                hakBorAccountOf[msg.sender].interest = 0;
+                hakBorAccountOf[msg.sender].deposit -= (amount - hakBorAccountOf[msg.sender].interest);
+            }
+
+            hakBorMutexOf[msg.sender] = false;
+
+            return hakBorAccountOf[msg.sender].deposit;
+        }
+
     }
     
     /**
@@ -179,7 +247,22 @@ contract Bank is IBank {
      * @return - true if the liquidation was successful, otherwise revert.
      */
     function liquidate(address token, address account) payable external override returns (bool){
-    
+
+        uint256 collateral_ratio = this.getCollateralRatio(token, account);
+
+        if (collateral_ratio < 150) {
+            if (token == this.ethToken){
+            }
+
+            else{
+            }
+            return true;
+        }
+
+        else {
+            return false;
+        }
+
     }
     
     /**
@@ -254,23 +337,25 @@ contract Bank is IBank {
     }
     
     /**
-     * new function to update interest for deposit
-     * 
-     * 
+     * Update account interest to current block, for deposit/withdraw.
+     * @param account - user Account. Can be either eth of hak.
      */
      function updateDepInterest(Account account_) private returns (bool){
-        uint256 currPeriod = block.number - account_.lastInterestBlock; 
-        require(currPeriod > 0);
+        require(block.number - account_.lastInterestBlock > 0);
+        account_.interest += account_.deposit * 3 / 100 * (block.number - account_.lastInterestBlock) / 100;
         account_.lastInterestBlock = block.number;
-        account_.interest += ((3 * account_.deposit) / 100 ) * currPeriod;
         return true;
      }
      
+    /**
+     * Update account interest to current block, for borrow/repay.
+     * @param account - user Account. Can be either eth of hak.
+     */
     function updateBorInterest(Account account_) private returns (bool){
-        uint256 currPeriod = block.number - account_.lastInterestBlock;
-        require(currPeriod > 0);
+        require(block.number - account_.lastInterestBlock >= 0);
+        account_.interest += account_.deposit * 5 / 100 * (block.number - account_.lastInterestBlock) / 100;
         account_.lastInterestBlock = block.number;
-        account_.interest += ((5 * account_.deposit) / 100) * currPeriod;
         return true;
     }
+
 }
