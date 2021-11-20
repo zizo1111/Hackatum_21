@@ -118,14 +118,8 @@ contract Bank is IBank {
             
             ethDepMutexOf[msg.sender] = false;
             return amount;
-<<<<<<< HEAD
-        }
-
-        else {
-=======
         }   
-        else if(token == this.hakToken){
->>>>>>> d7c5c18135066b50a2213214e1bf5a871f6ae5b6
+        else if(token == hakToken){
             
             //TODO: find a HAK token identifier
             require(!hakDepMutexOf[msg.sender]);
@@ -189,7 +183,7 @@ contract Bank is IBank {
         if (collateral_ratio >= 15000){
             if (amount > 0){
                 
-                event Borrow(msg.sender, address indexed token, uint256 amount, uint256 newCollateralRatio );
+                emit Borrow(msg.sender, address indexed token, uint256 amount, uint256 newCollateralRatio );
                 ethBorAccountOf[msg.sender].deposit += amount;
             } else if (amount == 0) {
                 uint256 amount_max =  (((hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest) * 10000 / 15000) - ethBorAccountOf[msg.sender].deposit - ethBorAccountOf[msg.sender].interest); 
