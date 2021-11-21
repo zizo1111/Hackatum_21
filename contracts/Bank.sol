@@ -57,6 +57,8 @@ contract Bank is IBank {
         console.log('deposit()', 'amount    :', amount);
         console.log('deposit()', 'msg.value :', msg.value);
 
+        require(amount >= 0);
+
         if (token == ethToken) {
 
             console.log('deposit()', 'Case: ETH');
@@ -67,6 +69,8 @@ contract Bank is IBank {
             ethDepMutexOf[msg.sender] = true;
             
             require(updateDepInterest(ethDepAccountOf[msg.sender]));
+
+            // TODO: How to RECEIVE ETH? .transfer doesn't work?
 
             ethDepAccountOf[msg.sender].deposit = ethDepAccountOf[msg.sender].deposit.add(amount);
 
@@ -86,7 +90,12 @@ contract Bank is IBank {
             hakDepMutexOf[msg.sender] = true;
 
             require(updateDepInterest(hakDepAccountOf[msg.sender]));
-            
+
+            if (!IERC20(token).transferFrom(msg.sender, address(this), amount)) {
+                console.log('deposit()', 'Transaction failed!');
+                revert('transaction failed');
+            }
+
             hakDepAccountOf[msg.sender].deposit = hakDepAccountOf[msg.sender].deposit.add(amount);
 
             emit Deposit(msg.sender, token, amount);
@@ -129,7 +138,8 @@ contract Bank is IBank {
         console.log('withdraw()', 'token     :', token);
         console.log('withdraw()', 'msg.sender:', msg.sender);
         console.log('withdraw()', 'amount    :', amount);
-        // console.log('withdraw()', 'msg.value :', msg.value);
+
+        require(amount >= 0);
 
         if (token == ethToken) {
 
@@ -163,6 +173,8 @@ contract Bank is IBank {
                 ethDepAccountOf[msg.sender].deposit = ethDepAccountOf[msg.sender].deposit.sub(amount - ethDepAccountOf[msg.sender].interest);
                 ethDepAccountOf[msg.sender].interest = 0;
             }
+
+            msg.sender.transfer(amount); // .transfer() of ETH.
 
             emit Withdraw(msg.sender, token, amount);
 
@@ -201,6 +213,8 @@ contract Bank is IBank {
                 hakDepAccountOf[msg.sender].interest = 0;
             }
 
+            IERC20(token).transferFrom(address(this), msg.sender, amount); // .transfer() of ERC20.
+
             emit Withdraw(msg.sender, token, amount);
 
             hakDepMutexOf[msg.sender] = false;
@@ -234,11 +248,17 @@ contract Bank is IBank {
      */
     function borrow(address token, uint256 amount) external override returns (uint256) {
 
-        // require(msg.value == amount);
+        console.log('borrow()');
+        console.log('borrow()', '_hakToken :', hakToken);
+        console.log('borrow()', 'token     :', token);
+        console.log('borrow()', 'msg.sender:', msg.sender);
+        console.log('borrow()', 'amount    :', amount);
 
         if (token != ethToken) {
             revert('token not supported');
         }
+
+        require(amount >= 0);
 
         require((!ethBorMutexOf[msg.sender]) && (!hakDepMutexOf[msg.sender]));
         ethBorMutexOf[msg.sender] = true;
@@ -248,29 +268,82 @@ contract Bank is IBank {
             revert('no collateral deposited');
         }
 
+        require(updateDepInterest(hakDepAccountOf[msg.sender]));
+        require(updateBorInterest(ethBorAccountOf[msg.sender]));
+
         uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
+        console.log('borrow()', 'HAKinETH  :', HAKinETH);
         
-        uint256 hakDepinETH = hakDepAccountOf[msg.sender].deposit * HAKinETH ;
-        uint256 hakInterestinETH = hakDepAccountOf[msg.sender].interest * HAKinETH; 
-        
-        uint256 collateral_ratio = (hakDepinETH + hakInterestinETH) * 10000 / (ethBorAccountOf[msg.sender].deposit + amount + ethBorAccountOf[msg.sender].interest);
-        if (collateral_ratio >= 15000){
-            if (amount > 0){
-                uint256 newCollateralRatio = collateral_ratio;
-                emit Borrow(msg.sender, token, amount, newCollateralRatio);
-                ethBorAccountOf[msg.sender].deposit += amount;
-                msg.sender.transfer(amount);
-            } else if (amount == 0) {
-                uint256 amount_max =  (((hakDepAccountOf[msg.sender].deposit + hakDepAccountOf[msg.sender].interest) * 10000 / 15000) - ethBorAccountOf[msg.sender].deposit - ethBorAccountOf[msg.sender].interest); 
-                ethBorAccountOf[msg.sender].deposit += amount_max;
-                msg.sender.transfer(amount_max);
+        uint256 ethBalance      = ethBorAccountOf[msg.sender].deposit.add(ethBorAccountOf[msg.sender].interest);
+        uint256 hakBalance      = hakDepAccountOf[msg.sender].deposit.add(hakDepAccountOf[msg.sender].interest);
+        uint256 hakBalanceinETH = hakBalance.mul(HAKinETH) / (1 ether);
+        console.log('borrow()', 'ethBalance:', ethBalance);
+        console.log('borrow()', 'hakBalance:', hakBalance);
+        console.log('borrow()', 'hakBalETH :', hakBalanceinETH);
+
+        // Collateral ratio = (Deposited funds in HAK) / (Borrowed funds in ETH):
+        uint256 cur_ratio;
+        uint256 new_ratio;
+        uint256 end_ratio;
+        if (ethBalance == 0) {
+            cur_ratio = type(uint256).max;
+            if (amount > 0) {
+                new_ratio = hakBalanceinETH.mul(10000) / ethBalance.add(amount);
+            } else if (amount == 0) { // Maximum borrow.
+                new_ratio = uint256(15000); // Irrelevant.
             }
+        } else {
+            cur_ratio = hakBalanceinETH.mul(10000) / ethBalance;
+            new_ratio = hakBalanceinETH.mul(10000) / ethBalance.add(amount);
+        }
+        console.log('borrow()', 'cur_ratio :', cur_ratio);
+        console.log('borrow()', 'new_ratio :', new_ratio);
+
+        if (new_ratio >= uint256(15000)) {
+
+            if (amount == 0) {
+
+                console.log('borrow()', 'Case: Max loan.');
+                end_ratio = uint256(15000);
+                uint256 amount_max = (hakBalanceinETH.mul(10000) / end_ratio).sub(ethBalance);
+                console.log('borrow()', 'amount_max:', amount_max);
+                ethBorAccountOf[msg.sender].deposit = ethBorAccountOf[msg.sender].deposit.add(amount_max);
+                msg.sender.transfer(amount_max); // .transfer() of ETH.
+                emit Borrow(msg.sender, token, amount_max, end_ratio);
+
+            } else if (amount > 0) {
+
+                console.log('borrow()', 'Case: Loan approved.');
+                end_ratio = new_ratio;
+                ethBorAccountOf[msg.sender].deposit = ethBorAccountOf[msg.sender].deposit.add(amount);
+                msg.sender.transfer(amount); // .transfer() of ETH.
+                emit Borrow(msg.sender, token, amount, end_ratio);
+
+            }
+
+            ethBorMutexOf[msg.sender] = false;
+            hakDepMutexOf[msg.sender] = false;
+
+            console.log('borrow()', 'end_ratio :', end_ratio);
+            console.log('');
+
+        } else {
+
+            console.log('borrow()', 'Case: Loan rejected.');
+
+            end_ratio = cur_ratio;
+
+            ethBorMutexOf[msg.sender] = false;
+            hakDepMutexOf[msg.sender] = false;
+
+            console.log('borrow()', 'end_ratio :', end_ratio);
+            console.log('');
+
+            revert('borrow would exceed collateral ratio');
+
         }
 
-        ethBorMutexOf[msg.sender] = false;
-        hakDepMutexOf[msg.sender] = false;
-
-        return collateral_ratio;
+        return end_ratio;
 
     }
 
@@ -293,6 +366,8 @@ contract Bank is IBank {
         if (token != ethToken) {
             revert('token not supported');
         }
+
+        require(amount >= 0);
 
         require(msg.value == amount);
 
@@ -376,27 +451,39 @@ contract Bank is IBank {
      *           If the account has deposited token, but has not borrowed anything then 
      *           return MAX_INT.
      */
-    function getCollateralRatio(address token, address account) view external override returns (uint256){
-        if (token == hakToken){
-            if (hakDepAccountOf[account].deposit > 0){
-                if (ethBorAccountOf[account].deposit > 0) {
-                    uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
-        
-                    uint256 hakDepinETH = hakDepAccountOf[account].deposit * HAKinETH ;
-                    uint256 hakInterestinETH = hakDepAccountOf[account].interest * HAKinETH; 
-                    
-                    return (hakDepinETH + hakInterestinETH) * 10000 / (ethBorAccountOf[account].deposit + ethBorAccountOf[account].interest);
-                }
-                else
-                {
-                    return type(uint256).max;
-                }
-            }
-            else
-            {
-                return 0;
-            }
+    function getCollateralRatio(address token, address account) view external override returns (uint256) {
+
+        console.log('getCollateralRatio()');
+        console.log('getCollateralRatio()', '_hakToken :', hakToken);
+        console.log('getCollateralRatio()', 'token     :', token);
+        console.log('getCollateralRatio()', 'msg.sender:', msg.sender);
+        console.log('getCollateralRatio()', 'account   :', account);
+
+        if (hakDepAccountOf[msg.sender].deposit == 0) {
+            // revert('no collateral deposited');
+            return 0;
+        } else if (ethBorAccountOf[msg.sender].deposit.add(checkBorInterest(ethBorAccountOf[msg.sender])) == 0) {
+            return type(uint256).max;
         }
+
+        uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
+        console.log('getCollateralRatio()', 'HAKinETH  :', HAKinETH);
+
+        uint256 ethBalance      = ethBorAccountOf[msg.sender].deposit.add(checkBorInterest(ethBorAccountOf[msg.sender]));
+        uint256 hakBalance      = hakDepAccountOf[msg.sender].deposit.add(checkDepInterest(hakDepAccountOf[msg.sender]));
+        uint256 hakBalanceinETH = hakBalance.mul(HAKinETH) / (1 ether);
+        console.log('getCollateralRatio()', 'ethBalance:', ethBalance);
+        console.log('getCollateralRatio()', 'hakBalance:', hakBalance);
+        console.log('getCollateralRatio()', 'hakBalETH :', hakBalanceinETH);
+
+        // Collateral ratio = (Deposited funds in HAK) / (Borrowed funds in ETH):
+        uint256 cur_ratio = hakBalanceinETH.mul(10000) / ethBalance;
+
+        console.log('getCollateralRatio()', 'cur_ratio :', cur_ratio);
+        console.log('');
+
+        return cur_ratio;
+
     }
 
 
@@ -406,16 +493,14 @@ contract Bank is IBank {
      * @param token - the address of the token for which the balance is computed.
      * @return - the value of the caller's balance with interest, excluding debts.
      */
-    function getBalance(address token) view external override returns (uint256){
+    function getBalance(address token) view external override returns (uint256) {
+
         if (token == ethToken){
-  
-            return ethDepAccountOf[msg.sender].deposit + checkDepInterest(ethDepAccountOf[msg.sender]);
-        }   
-        else {
-            if (token == ethToken){
-                return hakDepAccountOf[msg.sender].deposit + checkDepInterest(hakDepAccountOf[msg.sender]);
-            }
-            
+            return ethDepAccountOf[msg.sender].deposit.add(checkDepInterest(ethDepAccountOf[msg.sender]));
+        } else if (token == hakToken) {
+            return hakDepAccountOf[msg.sender].deposit.add(checkDepInterest(hakDepAccountOf[msg.sender]));
+        } else {
+            revert('token not supported');
         }
 
     }
@@ -455,6 +540,18 @@ contract Bank is IBank {
     function checkDepInterest(Account storage account_) view private returns (uint256) {
         require(block.number - account_.lastInterestBlock >= 0);
         uint256 interest = account_.interest + account_.deposit * 3 / 100 * (block.number - account_.lastInterestBlock) / 100;
+        return interest;
+    }
+
+
+    /**
+     * Compute borrow interest without update, for checking account balance.
+     * @param account_ - user Account. Can be either eth or hak.
+     * @return - current accrued interest.
+     */
+    function checkBorInterest(Account storage account_) view private returns (uint256) {
+        require(block.number - account_.lastInterestBlock >= 0);
+        uint256 interest = account_.interest + account_.deposit * 5 / 100 * (block.number - account_.lastInterestBlock) / 100;
         return interest;
     }
 
