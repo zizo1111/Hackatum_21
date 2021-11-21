@@ -363,31 +363,55 @@ contract Bank is IBank {
      */
     function repay(address token, uint256 amount) payable external override returns (uint256) {
 
+        console.log('repay()');
+        console.log('repay()', '_hakToken :', hakToken);
+        console.log('repay()', 'token     :', token);
+        console.log('repay()', 'msg.sender:', msg.sender);
+        console.log('repay()', 'amount    :', amount);
+
         if (token != ethToken) {
             revert('token not supported');
         }
 
         require(amount >= 0);
 
-        require(msg.value == amount);
-
-
         require(!ethBorMutexOf[msg.sender]);
         ethBorMutexOf[msg.sender] = true;
 
         require(updateBorInterest(ethBorAccountOf[msg.sender]));
-        require(amount <= ethBorAccountOf[msg.sender].deposit + ethBorAccountOf[msg.sender].interest);
+        console.log('repay()', 'deposit   :', ethBorAccountOf[msg.sender].deposit);
+        console.log('repay()', 'interest  :', ethBorAccountOf[msg.sender].interest);
 
-        emit Repay(msg.sender, token, amount);
-
-        if (amount <= ethBorAccountOf[msg.sender].interest) {
-            ethBorAccountOf[msg.sender].interest -= amount;
-        } else {
-            ethBorAccountOf[msg.sender].interest = 0;
-            ethBorAccountOf[msg.sender].deposit -= (amount - ethBorAccountOf[msg.sender].interest);
+        if (ethBorAccountOf[msg.sender].deposit.add(ethBorAccountOf[msg.sender].interest) == 0) {
+            revert('nothing to repay');
         }
 
+        if (msg.value < amount) { // msg.value wouldn't be zero because we are handling ETH.
+            revert('msg.value < amount to repay');
+        }
+
+        require(amount <= ethBorAccountOf[msg.sender].deposit.add(ethBorAccountOf[msg.sender].interest), '');
+
+        if (amount == 0) {
+            amount = ethBorAccountOf[msg.sender].deposit.add(ethBorAccountOf[msg.sender].interest);
+        }
+
+        // TODO: How to RECEIVE ETH? .transfer doesn't work?
+
+        if (amount <= ethBorAccountOf[msg.sender].interest) {
+            ethBorAccountOf[msg.sender].interest = ethBorAccountOf[msg.sender].interest.sub(amount);
+        } else {
+            ethBorAccountOf[msg.sender].deposit = ethBorAccountOf[msg.sender].deposit.sub(amount.sub(ethBorAccountOf[msg.sender].interest));
+            ethBorAccountOf[msg.sender].interest = 0;
+        }
+        console.log('repay()', 'deposit   :', ethBorAccountOf[msg.sender].deposit);
+        console.log('repay()', 'interest  :', ethBorAccountOf[msg.sender].interest);
+
+        emit Repay(msg.sender, token, ethBorAccountOf[msg.sender].deposit.add(ethBorAccountOf[msg.sender].interest));
+
         ethBorMutexOf[msg.sender] = false;
+
+        console.log('');
 
         return ethBorAccountOf[msg.sender].deposit;
 
