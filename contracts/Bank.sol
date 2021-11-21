@@ -427,6 +427,12 @@ contract Bank is IBank {
      */
     function liquidate(address token, address account) payable external override returns (bool) {
 
+        console.log('liquidate()');
+        console.log('liquidate()', '_hakToken :', hakToken);
+        console.log('liquidate()', 'token     :', token);
+        console.log('liquidate()', 'msg.sender:', msg.sender);
+        console.log('liquidate()', 'account   :', account);
+
         if (token != hakToken) {
             revert('token not supported');
         }
@@ -435,31 +441,73 @@ contract Bank is IBank {
             revert('cannot liquidate own position');
         }
 
-        require(!ethBorMutexOf[account]);
+        require(!ethBorMutexOf[account] && !hakDepMutexOf[account]);
         ethBorMutexOf[account] = true;
+        hakDepMutexOf[account] = true;
 
-        uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
-        
-        uint256 hakDepinETH = hakDepAccountOf[account].deposit * HAKinETH ;
-        uint256 hakInterestinETH = hakDepAccountOf[account].interest * HAKinETH;
-        uint256 collateral_ratio = (hakDepinETH + hakInterestinETH) * 10000 / (ethBorAccountOf[account].deposit + ethBorAccountOf[msg.sender].interest);
+        require(updateBorInterest(ethBorAccountOf[account]));
+        require(updateDepInterest(hakDepAccountOf[account]));
 
-        require (collateral_ratio < 150);
+        uint256 collateral_ratio = this.getCollateralRatio(token, account);
+        console.log('liquidate()', 'coll_ratio:', collateral_ratio);
 
-        if (token == ethToken) {
-            //Do what? Should the ethToken be accepted as a collatoral?
+        if (collateral_ratio >= 15000) {
             ethBorMutexOf[account] = false;
-            return false;
+            hakDepMutexOf[account] = false;
+            revert('healty position');
         }
 
-        else {
-            require (msg.value >= ethBorAccountOf[account].deposit+ethBorAccountOf[account].interest); //Do we only allow exact replayment? What do we do with the reminder?
-            ethDepAccountOf[msg.sender].deposit += ethBorAccountOf[account].deposit;
+        require(!ethDepMutexOf[msg.sender] && !hakDepMutexOf[msg.sender]);
+        ethDepMutexOf[msg.sender] = true;
+        hakDepMutexOf[msg.sender] = true;
+
+        require(updateDepInterest(ethDepAccountOf[msg.sender]));
+        require(updateDepInterest(hakDepAccountOf[msg.sender]));
+
+        // Collateral ratio < 150%.
+        // if (ethDepAccountOf[msg.sender].deposit.add(ethDepAccountOf[msg.sender].interest) >= ethBorAccountOf[account].deposit.add(ethBorAccountOf[account].interest)) {
+        if (msg.value >= ethBorAccountOf[account].deposit.add(ethBorAccountOf[account].interest)) {
+
+            console.log('liquidate()', 'Liquidator has sufficient ETH to liquidate account.');
+
+            // uint256 excessETH = ethDepAccountOf[msg.sender].deposit.add(ethDepAccountOf[msg.sender].interest) - ethBorAccountOf[account].deposit.add(ethBorAccountOf[account].interest);
+            uint256 excessETH = msg.value - ethBorAccountOf[account].deposit.add(ethBorAccountOf[account].interest);
+            uint256 collateral = hakDepAccountOf[account].deposit.add(hakDepAccountOf[account].interest);
+            console.log('liquidate()', 'excessETH :', excessETH);
+            console.log('liquidate()', 'collateral:', collateral);
+
+            hakDepAccountOf[msg.sender].deposit = hakDepAccountOf[msg.sender].deposit.add(collateral);
+            hakDepAccountOf[account].deposit = 0;
+            hakDepAccountOf[account].interest = 0;
             ethBorAccountOf[account].deposit = 0;
             ethBorAccountOf[account].interest = 0;
+
+            emit Liquidate(msg.sender, account, token, collateral, excessETH);
+
             ethBorMutexOf[account] = false;
+            hakDepMutexOf[account] = false;
+            ethDepMutexOf[msg.sender] = false;
+            hakDepMutexOf[msg.sender] = false;
+
+            console.log('');
+
             return true;
+
+        } else {
+
+            console.log('liquidate()', 'Liquidation failed. Liquidator has insufficient ETH funds.');
+
+            ethBorMutexOf[account] = false;
+            hakDepMutexOf[account] = false;
+            ethDepMutexOf[msg.sender] = false;
+            hakDepMutexOf[msg.sender] = false;
+
+            console.log('');
+
+            revert('insufficient ETH sent by liquidator');
+
         }
+
     }
 
 
@@ -483,18 +531,18 @@ contract Bank is IBank {
         console.log('getCollateralRatio()', 'msg.sender:', msg.sender);
         console.log('getCollateralRatio()', 'account   :', account);
 
-        if (hakDepAccountOf[msg.sender].deposit == 0) {
+        if (hakDepAccountOf[account].deposit == 0) {
             // revert('no collateral deposited');
             return 0;
-        } else if (ethBorAccountOf[msg.sender].deposit.add(checkBorInterest(ethBorAccountOf[msg.sender])) == 0) {
+        } else if (ethBorAccountOf[account].deposit.add(checkBorInterest(ethBorAccountOf[account])) == 0) {
             return type(uint256).max;
         }
 
         uint256 HAKinETH = priceOracle.getVirtualPrice(hakToken); //address of HAK
         console.log('getCollateralRatio()', 'HAKinETH  :', HAKinETH);
 
-        uint256 ethBalance      = ethBorAccountOf[msg.sender].deposit.add(checkBorInterest(ethBorAccountOf[msg.sender]));
-        uint256 hakBalance      = hakDepAccountOf[msg.sender].deposit.add(checkDepInterest(hakDepAccountOf[msg.sender]));
+        uint256 ethBalance      = ethBorAccountOf[account].deposit.add(checkBorInterest(ethBorAccountOf[account]));
+        uint256 hakBalance      = hakDepAccountOf[account].deposit.add(checkDepInterest(hakDepAccountOf[account]));
         uint256 hakBalanceinETH = hakBalance.mul(HAKinETH) / (1 ether);
         console.log('getCollateralRatio()', 'ethBalance:', ethBalance);
         console.log('getCollateralRatio()', 'hakBalance:', hakBalance);
