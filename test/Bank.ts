@@ -385,6 +385,12 @@ describe("Bank contract", function () {
       let liquidatorHakBalanceBefore = await hak2.balanceOf(await acc2.getAddress());
       collateralAmount = ethers.utils.parseEther("15.0045");
       let liquidatorAmount = ethers.utils.parseEther("16.0");
+
+      console.log('This test is wrong!!!');
+      console.log('collateralAmount =', collateralAmount.toString());
+      console.log('liquidatorAmount =', liquidatorAmount.toString());
+      console.log('Excess =', liquidatorAmount.sub("10500000000000000000").toString());
+
       await expect(bank2.liquidate(hak.address, await acc1.getAddress(), { value: liquidatorAmount}))
         .to.emit(bank, "Liquidate")
         .withArgs(
